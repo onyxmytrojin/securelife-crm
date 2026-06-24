@@ -86,8 +86,15 @@ SINGLE-SELECT CHOICES: For questions with one answer, append after your message 
 CHOICES:["Option A", "Option B", "Option C"]
 
 Use CHOICES for:
-- Annual income: CHOICES:["Under ₹3 lakhs", "₹3–6 lakhs", "₹6–12 lakhs", "₹12–25 lakhs", "Above ₹25 lakhs"]
-- Family size: CHOICES:["Just me", "Me + spouse", "Small family (3–4 people)", "Large family (5+)"]
+- Occupation: CHOICES:["Salaried – Private Sector", "Salaried – Government / PSU", "Business Owner / Self-Employed", "Doctor / Healthcare", "Engineer / IT Professional", "Teacher / Educator", "Finance / Banking / Insurance", "Lawyer / Legal Professional", "Student", "Homemaker", "Retired", "Other – please specify"]
+- Annual income: CHOICES:["Under ₹3 lakhs", "₹3–5 lakhs", "₹5–8 lakhs", "₹8–12 lakhs", "₹12–20 lakhs", "₹20–35 lakhs", "₹35–50 lakhs", "₹50 lakhs–1 Cr", "Above ₹1 Cr"]
+
+NUMBER_INPUT: For numeric questions (age and family size), append after your message text:
+NUMBER_INPUT:{"label":"Your age in years","min":16,"max":85}
+
+Use NUMBER_INPUT for:
+- Age: NUMBER_INPUT:{"label":"Your age in years","min":16,"max":85}
+- Family size: NUMBER_INPUT:{"label":"Number of family members including yourself","min":1,"max":15}
 
 MULTI-SELECT CHOICES: For questions where the client can pick multiple answers, append:
 MULTI_CHOICES:["Option A", "Option B", "Option C"]
@@ -96,14 +103,18 @@ Use MULTI_CHOICES for ALL insurance concern questions — the client can select 
 - First concern ask: MULTI_CHOICES:["Health Insurance", "Life Insurance", "Home / Property", "Auto / Vehicle", "Loan Protection", "Retirement / Pension", "Travel Insurance"]
 - After they confirm, ask "Any other areas?" only if they seemed unsure. Do NOT show another MULTI_CHOICES round unless necessary.
 
-Never use CHOICES or MULTI_CHOICES for open-ended questions like phone number or free-text responses.
+Never use CHOICES, NUMBER_INPUT, or MULTI_CHOICES for open-ended questions like phone number or free-text responses.
 
-IMPORTANT: Append this JSON block at the very end of EVERY message where you have collected ANY piece of client information (name, email, phone, age, concern — anything at all). Do not wait until all fields are collected. Output it after your conversational text and after any CHOICES line, exactly like this — do not change the format:
+IMPORTANT: Append this JSON block at the very end of EVERY message where you have collected ANY piece of client information (name, email, phone, age, concern — anything at all). Do not wait until all fields are collected. Output it after your conversational text and after any CHOICES/NUMBER_INPUT line, exactly like this — do not change the format:
 
 LEAD_DATA:{"name":"...","email":"...","phone":"...","age":null,"occupation":"...","annual_income":null,"family_size":null,"existing_coverage":"...","primary_concern":"...","concerns":["health","life"],"location":"..."}
 
-The "concerns" array must include ALL insurance concerns the client mentioned. Use lowercase keys: health, life, auto, property, loan, retirement, travel, other. The "primary_concern" field should be the first/most important concern.
-Use null for any field not yet collected. Output LEAD_DATA in every message once you have collected at least one piece of information — it will be silently processed and not shown to the user. Include ALL previously collected data in every LEAD_DATA block, not just new fields.`
+Rules for LEAD_DATA fields:
+- "annual_income": Convert income labels to a numeric midpoint in rupees. Examples: "Under ₹3 lakhs" → 200000, "₹3–5 lakhs" → 400000, "₹5–8 lakhs" → 650000, "₹8–12 lakhs" → 1000000, "₹12–20 lakhs" → 1600000, "₹20–35 lakhs" → 2750000, "₹35–50 lakhs" → 4250000, "₹50 lakhs–1 Cr" → 7500000, "Above ₹1 Cr" → 12500000.
+- "age" and "family_size": Store as integers.
+- "concerns": Include ALL insurance concerns mentioned. Use lowercase keys: health, life, auto, property, loan, retirement, travel, other.
+- "primary_concern": The first/most important concern.
+- Use null for any field not yet collected. Include ALL previously collected data in every LEAD_DATA block, not just new fields.`
 }
 
 export const EXTRACTION_SYSTEM_PROMPT = `You are an expert insurance document analyst. Extract structured data from the provided insurance document text.

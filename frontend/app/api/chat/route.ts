@@ -25,28 +25,31 @@ async function syncProfileToSiblings(
   const hasConcerns = Array.isArray(profileFields.concerns) && (profileFields.concerns as string[]).length > 0
   if (!hasProfileData && !hasConcerns) return
 
-  const { data: siblings } = await supabaseAdmin
+  const { data: siblingsRaw } = await supabaseAdmin
     .from('leads')
     .select('id, ' + PROFILE_KEYS.join(', ') + ', concerns, primary_concern')
     .eq('email', email)
     .neq('id', currentLeadId)
     .neq('status', 'rejected')
 
-  for (const sibling of siblings ?? []) {
+  const siblings = (siblingsRaw ?? []) as unknown as Record<string, unknown>[]
+
+  for (const sibling of siblings) {
     const sibUpdate: Record<string, unknown> = {}
     for (const key of PROFILE_KEYS) {
-      if (profileFields[key] != null && profileFields[key] !== '' && !(sibling as Record<string, unknown>)[key]) {
+      if (profileFields[key] != null && profileFields[key] !== '' && !sibling[key]) {
         sibUpdate[key] = profileFields[key]
       }
     }
     if (hasConcerns) {
       const incoming = profileFields.concerns as string[]
-      const merged = [...new Set([...(sibling.concerns ?? []), ...incoming])]
-      if (merged.length > (sibling.concerns ?? []).length) sibUpdate.concerns = merged
-      if (!sibling.primary_concern && merged.length > 0) sibUpdate.primary_concern = profileFields.primary_concern as string || merged[0]
+      const existing = (sibling.concerns as string[] | null) ?? []
+      const merged = [...new Set([...existing, ...incoming])]
+      if (merged.length > existing.length) sibUpdate.concerns = merged
+      if (!sibling.primary_concern && merged.length > 0) sibUpdate.primary_concern = (profileFields.primary_concern as string) || merged[0]
     }
     if (Object.keys(sibUpdate).length > 0) {
-      await supabaseAdmin.from('leads').update(sibUpdate).eq('id', sibling.id)
+      await supabaseAdmin.from('leads').update(sibUpdate).eq('id', sibling.id as string)
     }
   }
 }
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
     const hasExtracts = msgConcerns.length > 0 || Object.keys(msgFields).length > 0
     if (hasExtracts) {
       const { data: existingLead } = await supabaseAdmin
-        .from('leads').select('concerns, primary_concern, phone, age, family_size').eq('id', currentLeadId).single()
+        .from('leads').select('concerns, primary_concern, phone, age, family_size, annual_income, occupation').eq('id', currentLeadId).single()
       const immediateUpdate: Record<string, unknown> = {}
       // Concerns
       if (msgConcerns.length > 0) {
@@ -144,6 +147,10 @@ export async function POST(req: NextRequest) {
       if (msgFields.age && !existingLead?.age) immediateUpdate.age = msgFields.age
       // Family size — only overwrite if not already set
       if (msgFields.family_size && !existingLead?.family_size) immediateUpdate.family_size = msgFields.family_size
+      // Annual income from bracket label — only overwrite if not already set
+      if (msgFields.annual_income && !existingLead?.annual_income) immediateUpdate.annual_income = msgFields.annual_income
+      // Occupation from CHOICES selection — only overwrite if not already set
+      if (msgFields.occupation && !existingLead?.occupation) immediateUpdate.occupation = msgFields.occupation
 
       if (Object.keys(immediateUpdate).length > 0) {
         await supabaseAdmin.from('leads').update(immediateUpdate).eq('id', currentLeadId)

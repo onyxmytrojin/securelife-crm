@@ -15,7 +15,22 @@ export interface ExtractedLeadFields {
   phone?: string
   age?: number
   family_size?: number
+  annual_income?: number
+  occupation?: string
 }
+
+// Map income bracket labels (from CHOICES) to numeric midpoints
+const INCOME_LABEL_MAP: [RegExp, number][] = [
+  [/above\s*₹?\s*1\s*cr/i,               12500000],
+  [/₹?\s*50\s*l[a-z]*.*1\s*cr/i,          7500000],
+  [/₹?\s*35\s*l[a-z]*.*50\s*l/i,          4250000],
+  [/₹?\s*20\s*l[a-z]*.*35\s*l/i,          2750000],
+  [/₹?\s*12\s*l[a-z]*.*20\s*l/i,          1600000],
+  [/₹?\s*8\s*l[a-z]*.*12\s*l/i,           1000000],
+  [/₹?\s*5\s*l[a-z]*.*8\s*l/i,             650000],
+  [/₹?\s*3\s*l[a-z]*.*5\s*l/i,             400000],
+  [/under\s*₹?\s*3\s*l/i,                  200000],
+]
 
 export function extractFieldsFromMessage(message: string): ExtractedLeadFields {
   const fields: ExtractedLeadFields = {}
@@ -45,13 +60,38 @@ export function extractFieldsFromMessage(message: string): ExtractedLeadFields {
 
   // Family size
   const familyMatch =
+    message.match(/\bfamily\s+(?:size\s+is\s+)?(\d+)\b/i) ??
     message.match(/\bfamily\s+of\s+(\d+)\b/i) ??
     message.match(/\b(\d+)\s+(?:member|person|people|children|kids|dependant|dependent)/i) ??
     message.match(/\b(\d+)\s+of\s+us\b/i) ??
-    message.match(/\bwe\s+are\s+(\d+)\b/i)
+    message.match(/\bwe\s+are\s+(\d+)\b/i) ??
+    message.match(/\bmy\s+family\s+(?:has|size\s+is)\s+(\d+)/i)
   if (familyMatch) {
     const size = parseInt(familyMatch[1])
     if (size >= 1 && size <= 20) fields.family_size = size
+  }
+
+  // Annual income — match bracket labels from CHOICES
+  for (const [pattern, amount] of INCOME_LABEL_MAP) {
+    if (pattern.test(message)) { fields.annual_income = amount; break }
+  }
+
+  // Occupation — match labels from CHOICES (exact match against known categories)
+  const OCCUPATION_LABELS = [
+    'Salaried – Private Sector',
+    'Salaried – Government / PSU',
+    'Business Owner / Self-Employed',
+    'Doctor / Healthcare',
+    'Engineer / IT Professional',
+    'Teacher / Educator',
+    'Finance / Banking / Insurance',
+    'Lawyer / Legal Professional',
+    'Student',
+    'Homemaker',
+    'Retired',
+  ]
+  for (const label of OCCUPATION_LABELS) {
+    if (message.trim() === label || message.includes(label)) { fields.occupation = label; break }
   }
 
   return fields

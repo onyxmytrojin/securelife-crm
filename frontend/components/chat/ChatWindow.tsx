@@ -13,6 +13,15 @@ interface AttachedFile {
   error?: string
 }
 
+interface NumberInputCfg { label: string; min?: number; max?: number }
+
+interface ParsedMessage {
+  text: string
+  choices: string[]
+  multi: boolean
+  numberInput: NumberInputCfg | null
+}
+
 interface Props {
   leadId: string | null
   userProfile?: { name: string; email: string } | null
@@ -25,35 +34,51 @@ interface Props {
 }
 
 function normalizeQuotes(s: string) {
-  return s.replace(/[“”„]/g, '"').replace(/[‘’‚]/g, "'")
+  return s.replace(/[""„]/g, '"').replace(/[''‚]/g, "'")
 }
 
-function parseChoices(content: string): { text: string; choices: string[]; multi: boolean } {
-  const multiMatch  = content.match(/MULTI_CHOICES:(\[[\s\S]*?\])/i)
-  const singleMatch = content.match(/CHOICES:(\[[\s\S]*?\])/i)
+function parseMessage(content: string): ParsedMessage {
+  let text = content.trim()
+  let numberInput: NumberInputCfg | null = null
+
+  // NUMBER_INPUT — must be processed before CHOICES stripping
+  const numMatch = text.match(/NUMBER_INPUT:(\{[^}]+\})/i)
+  if (numMatch) {
+    try {
+      const cfg = JSON.parse(normalizeQuotes(numMatch[1])) as { label?: string; min?: number; max?: number }
+      numberInput = { label: cfg.label ?? 'Enter value', min: cfg.min, max: cfg.max }
+    } catch { /* ignore */ }
+    text = text.replace(/NUMBER_INPUT:\{[^}]+\}/i, '').trim()
+  }
+
+  // CHOICES / MULTI_CHOICES
+  const multiMatch  = text.match(/MULTI_CHOICES:(\[[\s\S]*?\])/i)
+  const singleMatch = text.match(/CHOICES:(\[[\s\S]*?\])/i)
   const match = multiMatch ?? singleMatch
   const multi = !!multiMatch
-  if (!match) return { text: content.trim(), choices: [], multi: false }
-  try {
-    const choices = JSON.parse(normalizeQuotes(match[1])) as string[]
-    const pattern = multi ? /MULTI_CHOICES:\[[\s\S]*?\]/i : /CHOICES:\[[\s\S]*?\]/i
-    const text = content.replace(pattern, '').trim()
-    return { text, choices, multi }
-  } catch {
-    // Strip the raw CHOICES line from display even if parse failed
-    const text = content.replace(/(?:MULTI_)?CHOICES:\[[\s\S]*?\]/i, '').trim()
-    return { text, choices: [], multi: false }
+  let choices: string[] = []
+  if (match) {
+    try {
+      choices = JSON.parse(normalizeQuotes(match[1])) as string[]
+      const pattern = multi ? /MULTI_CHOICES:\[[\s\S]*?\]/i : /CHOICES:\[[\s\S]*?\]/i
+      text = text.replace(pattern, '').trim()
+    } catch {
+      text = text.replace(/(?:MULTI_)?CHOICES:\[[\s\S]*?\]/i, '').trim()
+    }
   }
+
+  return { text, choices, multi, numberInput }
 }
+
+const OTHER_MARKER = 'Other – please specify'
 
 export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabled = false, parentLeadId, sessionType, welcomeMessage }: Props) {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: welcomeMessage ?? buildChatWelcome(null) }
   ])
 
-  // Update welcome message once profile loads (async) — only if chat hasn't started
   useEffect(() => {
-    if (welcomeMessage) return // Follow-up sessions have a fixed welcome
+    if (welcomeMessage) return
     if (!userProfile?.name) return
     setMessages(prev => {
       if (prev.length === 1 && prev[0].role === 'assistant') {
@@ -62,14 +87,48 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
       return prev
     })
   }, [userProfile?.name, welcomeMessage])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
+
+  const [input, setInput]                   = useState('')
+  const [loading, setLoading]               = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [currentLeadId, setCurrentLeadId] = useState<string | null>(leadId)
-  const [attachment, setAttachment] = useState<AttachedFile | null>(null)
+  const [currentLeadId, setCurrentLeadId]   = useState<string | null>(leadId)
+  const [attachment, setAttachment]         = useState<AttachedFile | null>(null)
   const [selectedChoices, setSelectedChoices] = useState<string[]>([])
-  const fileRef = useRef<HTMLInputElement>(null)
+
+  // Custom text input (after "Other – please specify")
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  const [customInputVal, setCustomInputVal]   = useState('')
+  const customInputRef = useRef<HTMLInputElement>(null)
+
+  // NUMBER_INPUT state — stored per last-assistant-message
+  const [numInputVal, setNumInputVal]     = useState('')
+  const [activeNumCfg, setActiveNumCfg]   = useState<NumberInputCfg | null>(null)
+
+  const fileRef   = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Reset interactive states whenever a new message lands
+  useEffect(() => {
+    setShowCustomInput(false)
+    setCustomInputVal('')
+    setSelectedChoices([])
+    setNumInputVal('')
+  }, [messages.length])
+
+  // Extract NUMBER_INPUT cfg from last assistant message
+  useEffect(() => {
+    const last = [...messages].reverse().find(m => m.role === 'assistant')
+    if (last) {
+      const parsed = parseMessage(last.content)
+      setActiveNumCfg(parsed.numberInput)
+    } else {
+      setActiveNumCfg(null)
+    }
+  }, [messages])
+
+  useEffect(() => {
+    if (showCustomInput) setTimeout(() => customInputRef.current?.focus(), 50)
+  }, [showCustomInput])
 
   const loadHistory = useCallback(async (id: string) => {
     setHistoryLoading(true)
@@ -89,7 +148,7 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, attachment])
+  }, [messages, attachment, showCustomInput, activeNumCfg])
 
   const handleFile = async (file: File) => {
     if (!file.name.endsWith('.pdf')) {
@@ -180,8 +239,33 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
 
   const sendChoice = async (choice: string) => {
     if (loading) return
+    if (choice === OTHER_MARKER) {
+      setShowCustomInput(true)
+      setSelectedChoices([])
+      return
+    }
     setSelectedChoices([])
     await doSend(choice)
+  }
+
+  const sendCustomInput = async () => {
+    const val = customInputVal.trim()
+    if (!val || loading) return
+    setShowCustomInput(false)
+    setCustomInputVal('')
+    await doSend(val)
+  }
+
+  const sendNumInput = async (cfg: NumberInputCfg) => {
+    const raw = parseInt(numInputVal, 10)
+    if (isNaN(raw)) return
+    // Build a natural-language message so the regex extractor can also catch it
+    let msg = String(raw)
+    const lbl = cfg.label.toLowerCase()
+    if (lbl.includes('age'))    msg = `I am ${raw} years old`
+    else if (lbl.includes('family') || lbl.includes('member')) msg = `My family size is ${raw} members`
+    setNumInputVal('')
+    await doSend(msg)
   }
 
   const toggleMultiChoice = (choice: string) => {
@@ -210,8 +294,11 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((m, i) => {
-              const parsed = parseChoices(m.content)
-              const showChoices = parsed.choices.length > 0 && i === lastAssistantIdx && !loading
+              const parsed = parseMessage(m.content)
+              const isLast = i === lastAssistantIdx
+              const showChoices   = parsed.choices.length > 0 && isLast && !loading
+              const showNumWidget = isLast && !loading && activeNumCfg != null
+
               return (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                   <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} items-end gap-2`}>
@@ -229,10 +316,12 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
                     </div>
                   </div>
 
+                  {/* CHOICES / MULTI_CHOICES pills */}
                   {showChoices && (
                     <div className="flex flex-col gap-2 mt-2 ml-9 max-w-[85%]">
                       <div className="flex flex-wrap gap-2">
                         {parsed.choices.map(choice => {
+                          const isOther    = choice === OTHER_MARKER
                           const isSelected = selectedChoices.includes(choice)
                           return (
                             <button
@@ -241,6 +330,8 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
                               className={`text-[13px] px-3 py-1.5 rounded-lg border transition-all duration-150 cursor-pointer
                                 ${isSelected && parsed.multi
                                   ? 'bg-[#5E6AD2] text-white border-[#5E6AD2]'
+                                  : isOther
+                                  ? 'border-dashed border-white/[0.20] bg-transparent text-[#6B7280] hover:border-[#5E6AD2]/50 hover:text-[#A0A7B3]'
                                   : 'border-white/[0.12] bg-[#111317] text-[#A0A7B3] hover:bg-[#5E6AD2] hover:text-white hover:border-[#5E6AD2]'
                                 }`}
                             >
@@ -250,7 +341,34 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
                           )
                         })}
                       </div>
-                      {parsed.multi && (
+
+                      {/* Custom text input (after "Other") */}
+                      {showCustomInput && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            ref={customInputRef}
+                            type="text"
+                            value={customInputVal}
+                            onChange={e => setCustomInputVal(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && void sendCustomInput()}
+                            placeholder="Type your answer…"
+                            className="flex-1 max-w-[260px] bg-[#111317] border border-[#5E6AD2]/40 rounded-lg px-3 py-1.5
+                              text-[13px] text-[#F7F8FA] placeholder:text-[#4B5058]
+                              focus:outline-none focus:border-[#5E6AD2]/70 transition-colors"
+                          />
+                          <button
+                            onClick={() => void sendCustomInput()}
+                            disabled={!customInputVal.trim()}
+                            className="text-[13px] px-3 py-1.5 rounded-lg bg-[#5E6AD2] hover:bg-[#6B78E7] text-white
+                              disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Send
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Multi-select confirm */}
+                      {parsed.multi && !showCustomInput && (
                         <button
                           onClick={confirmMultiChoices}
                           disabled={!selectedChoices.length}
@@ -261,6 +379,34 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
                           Confirm ({selectedChoices.length} selected)
                         </button>
                       )}
+                    </div>
+                  )}
+
+                  {/* NUMBER_INPUT widget */}
+                  {showNumWidget && i === lastAssistantIdx && (
+                    <div className="flex items-center gap-2 mt-2 ml-9">
+                      <input
+                        type="number"
+                        value={numInputVal}
+                        onChange={e => setNumInputVal(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && activeNumCfg && void sendNumInput(activeNumCfg)}
+                        placeholder={activeNumCfg!.label}
+                        min={activeNumCfg!.min}
+                        max={activeNumCfg!.max}
+                        className="w-36 bg-[#111317] border border-[#5E6AD2]/40 rounded-lg px-3 py-1.5
+                          text-[14px] text-[#F7F8FA] placeholder:text-[#4B5058]
+                          focus:outline-none focus:border-[#5E6AD2]/70 transition-colors
+                          [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => activeNumCfg && void sendNumInput(activeNumCfg)}
+                        disabled={!numInputVal || isNaN(parseInt(numInputVal, 10))}
+                        className="text-[13px] px-3 py-1.5 rounded-lg bg-[#5E6AD2] hover:bg-[#6B78E7] text-white
+                          disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Send
+                      </button>
                     </div>
                   )}
                 </div>
@@ -307,7 +453,7 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
         </div>
       )}
 
-      {/* Input bar — hidden when conversation is closed */}
+      {/* Input bar */}
       {disabled ? (
         <div className="border-t border-white/[0.06] px-4 py-3 flex items-center gap-2.5">
           <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
