@@ -18,7 +18,7 @@ SecureLife's manual 2–3 day lead-to-analysis pipeline is replaced by an AI-dri
 Browser (Next.js frontend)
   │
   ├── /                → Pipeline Dashboard (kanban + list, realtime, KPI strip)
-  ├── /chat            → Customer chat portal (Priya)
+  ├── /chat            → Customer chat portal (Aria)
   ├── /leads/[id]      → Lead Detail (chat + docs + analysis)
   │
   ▼
@@ -95,7 +95,7 @@ new → chatting → qualified → awaiting_docs → processing → completed
 ### 5.1 Chatbot (Lead Capture)
 - **Model**: Claude claude-sonnet-4-6
 - **Pattern**: Stateful multi-turn — full conversation history sent each call
-- **System prompt**: Persona as "Priya from SecureLife". Guides user through name, contact, age, occupation, income, family size, existing coverage, and primary concern. Extracts structured lead object at end.
+- **System prompt**: Persona as "Aria from SecureLife". Guides user through name, contact, age, occupation (CHOICES widget — 12 options), income (CHOICES — 9 brackets), age/family size (NUMBER_INPUT widgets), existing coverage, and primary concern. Extracts structured lead object at end.
 - **Output**: Streaming text responses + a final structured JSON block (`LEAD_DATA: {...}`) that the API route parses and upserts to `leads`.
 - **Edge cases**: Vague answers → follow-up questions; user refuses → gracefully skip field; unrelated messages → gently redirect.
 
@@ -171,12 +171,17 @@ Returns `HTTP 429` with a user-friendly message; the frontend surfaces this inli
 - ✅ Redis caching — Conversation history cached per lead; rate limiting on chat endpoint
 - ✅ Auth — Supabase Auth with Google SSO + email/password; broker vs. customer role routing
 - ✅ Unit tests — 51 Vitest tests for scoring, urgency, and lead-utils; pre-commit hook enforces green tests
+- ✅ Structured chat inputs — CHOICES (occupation, income) and NUMBER_INPUT (age, family size) widgets in chatbot
+- ✅ Follow-up sessions — customers can re-open new chat sessions linked to their original lead via `parent_lead_id`
+- ✅ Ticket numbers — auto-incrementing `#NNNN` ticket assigned to each lead via DB trigger
+- ✅ Email notifications (Resend) — broker notified on `qualified`, `awaiting_docs`, `completed`; customer notified when docs are requested
+- ✅ Broker notes — editable inline notes panel on lead detail page; persisted via PATCH `/api/leads`
+- ✅ Arjun Kapoor analysis persona — senior consultant prompt with HLV/health benchmarks, STATED/VERIFIED discipline, Indian product vocabulary
 
 ### With more time
-1. **WhatsApp integration** — Twilio/Meta API for lead capture over WhatsApp (mentioned explicitly in the brief)
-2. **Email notifications** — Resend webhook when a lead hits `qualified` or uploads docs
-3. **Audit log** — Every state change recorded for compliance (who changed what, when)
-4. **Vector search** — Embed conversation + document text; enable semantic lead search across the pipeline
-5. **Lead assignment** — Assign individual leads to specific brokers in multi-broker teams
-6. **Document comparison** — Side-by-side diff of two uploaded policies
-7. **Conversation export** — Download a lead's full chat + analysis as a branded PDF report
+1. **WhatsApp integration** — Meta Cloud API for lead capture over WhatsApp (mentioned explicitly in the brief; Twilio requires paid plan so left as future work)
+2. **Audit log** — Every state change recorded for compliance (who changed what, when)
+3. **Vector search** — Embed conversation + document text; enable semantic lead search across the pipeline
+4. **Lead assignment** — Assign individual leads to specific brokers in multi-broker teams
+5. **Document comparison** — Side-by-side diff of two uploaded policies
+6. **Conversation export** — Download a lead's full chat + analysis as a branded PDF report

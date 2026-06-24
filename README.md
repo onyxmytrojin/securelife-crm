@@ -6,17 +6,19 @@ AI-powered lead capture, document extraction, and broker analysis dashboard — 
 > Loom walkthrough link — added after recording
 
 ## What it does
-1. **Chatbot** — AI (Claude) qualifies leads through natural conversation, captures structured profile data
+1. **Chatbot (Aria)** — AI qualifies leads through natural conversation; structured widgets (occupation CHOICES, income brackets, NUMBER_INPUT for age/family size) make data capture fast and accurate
 2. **PDF Extraction** — Uploads insurance PDFs → Claude extracts policy details, coverage, exclusions, premiums
-3. **Gap Analysis** — Claude generates coverage gap analysis, savings opportunities, risk flags, and broker recommendations
-4. **Pipeline Dashboard** — Kanban-style board showing all leads by status; full detail view per lead
+3. **Gap Analysis (Arjun Kapoor persona)** — Senior consultant AI generates HLV-anchored coverage gap analysis, savings opportunities, risk flags, and actionable broker recommendations with Indian product vocabulary
+4. **Pipeline Dashboard** — Kanban-style board showing all leads by status; full detail view per lead with broker-editable notes
+5. **Email Notifications** — Resend emails to broker on qualified / docs received / analysis ready; to customer when docs are requested
+6. **Follow-up Sessions** — Customers can start linked follow-up chats on their existing enquiry; profile synced across sessions
 
 ## Setup (< 5 minutes)
 
 ### Prerequisites
 - Node.js 18+
 - A Supabase project (free tier)
-- Anthropic API key
+- A Groq API key — free at [console.groq.com](https://console.groq.com) (takes 2 min)
 
 ### 1. Clone and install
 ```bash
@@ -27,11 +29,19 @@ npm install
 ### 2. Configure environment
 Copy `.env.local` and fill in your keys:
 ```
+# Required
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=       # optional, used as fallback
+GROQ_API_KEY=              # free at console.groq.com — default AI provider
+
+# Optional (production upgrades)
+ANTHROPIC_API_KEY=         # set AI_PROVIDER=anthropic to switch to Claude
+OPENAI_API_KEY=            # fallback for PDF extraction
+RESEND_API_KEY=            # email notifications (resend.com)
+BROKER_EMAIL=              # where broker notification emails go
+UPSTASH_REDIS_REST_URL=    # conversation cache + rate limiting
+UPSTASH_REDIS_REST_TOKEN=
 ```
 
 ### 3. Set up database
@@ -60,10 +70,13 @@ tasks.md           Build plan and progress tracker
 |-------|-----------|
 | Frontend | Next.js 16, React, TypeScript, Tailwind |
 | UI Components | shadcn/ui |
-| Database | Supabase (PostgreSQL) |
+| Database | Supabase (PostgreSQL + Realtime) |
 | File Storage | Supabase Storage |
-| Primary AI | Claude claude-sonnet-4-6 |
+| Default AI | Groq llama-3.3-70b (free) |
+| Primary AI | Claude claude-sonnet-4-6 (set `AI_PROVIDER=anthropic`) |
 | Fallback AI | GPT-4.1-mini |
+| Cache / Rate limit | Upstash Redis |
+| Email | Resend |
 | PDF Parsing | pdf-parse |
 | Validation | Zod |
 
