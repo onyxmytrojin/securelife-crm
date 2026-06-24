@@ -4,10 +4,11 @@
 
 SecureLife's manual 2–3 day lead-to-analysis pipeline is replaced by an AI-driven system that:
 1. Captures leads conversationally (chatbot)
-2. Stores structured data in PostgreSQL
+2. Stores structured data in PostgreSQL with real-time push to the broker dashboard
 3. Extracts key fields from insurance PDFs using Claude
 4. Generates broker-ready analysis (gaps, savings, risks)
-5. Surfaces everything in a clean pipeline dashboard
+5. Surfaces everything in a clean pipeline dashboard with live KPI analytics
+6. Caches conversation history in Redis and rate-limits the chat API to prevent abuse
 
 ---
 
@@ -16,24 +17,31 @@ SecureLife's manual 2–3 day lead-to-analysis pipeline is replaced by an AI-dri
 ```
 Browser (Next.js frontend)
   │
-  ├── /                → Pipeline Dashboard
+  ├── /                → Pipeline Dashboard (kanban + list, realtime, KPI strip)
+  ├── /chat            → Customer chat portal (Priya)
   ├── /leads/[id]      → Lead Detail (chat + docs + analysis)
   │
   ▼
 Next.js API Routes (server-side, Node.js)
   │
-  ├── /api/chat        → Conversational lead capture (Claude)
+  ├── /api/chat        → Conversational lead capture (Claude) [Redis cached + rate limited]
   ├── /api/leads       → Lead CRUD
   ├── /api/documents   → PDF upload → extraction (Claude)
   └── /api/analysis    → Gap analysis generation (Claude)
   │
-  ├── Supabase (PostgreSQL + Storage)
-  │     leads / conversations / documents / extracted_data / analyses
+  ├── Supabase (PostgreSQL + Realtime + Auth)
+  │     leads / conversations / documents / extracted_data / analyses / profiles
+  │     └── Realtime: postgres_changes → pushes INSERT/UPDATE to broker dashboard live
+  │
+  ├── Upstash Redis (serverless)
+  │     └── Conversation history cache (TTL 1h, invalidated on each reply)
+  │     └── Chat rate limiter (20 req/min per IP, sliding window)
   │
   ├── Anthropic API (Claude claude-sonnet-4-6)
   │     Chatbot · Extraction · Analysis
   │
-  └── OpenAI API (GPT-4.1-mini) ← fallback for extraction only
+  └── Groq API (llama-3.3-70b) ← default free-tier AI provider
+      OpenAI API (GPT-4.1-mini) ← fallback for extraction
 ```
 
 ---
@@ -45,11 +53,16 @@ Next.js API Routes (server-side, Node.js)
 | Framework | Next.js 16 App Router | Single repo for frontend + API routes; no separate backend service needed |
 | Language | TypeScript | End-to-end type safety; Zod for runtime validation |
 | UI | Tailwind + shadcn/ui | Production-quality components in minutes; Linear-style aesthetic |
-| Database | Supabase (PostgreSQL) | Free tier, instant REST + realtime, built-in Storage for PDFs |
+| Database | Supabase (PostgreSQL + Realtime) | Free tier, instant REST + websocket realtime, built-in Auth + Storage |
+| Cache / Rate limit | Upstash Redis | Serverless Redis with REST API — zero infra, integrates natively with Vercel |
 | Primary AI | Claude claude-sonnet-4-6 | Best-in-class for structured extraction and nuanced conversation |
-| Fallback AI | GPT-4.1-mini | Cost-effective extraction fallback if Claude rate-limits |
-| PDF parsing | pdf-parse | Pure Node.js, no external service needed; feeds raw text to Claude |
-| Validation | Zod | Schema validation for all Claude JSON outputs before DB insert |
+| Default AI | Groq (llama-3.3-70b) | Free tier, fast inference — used as default provider in dev/staging |
+| Fallback AI | GPT-4.1-mini | Cost-effective extraction fallback if primary rate-limits |
+| PDF parsing | pdf-parse | Pure Node.js, no external service; lazy-loaded to avoid Vercel build issues |
+| Validation | Zod | Schema validation for all AI JSON outputs before DB insert |
+| Auth | Supabase Auth + Google OAuth | Email/password + Google SSO; role-based routing (broker vs. customer) |
+| Hosting | Vercel | Zero-config Next.js deployment; auto-deploys on push to master |
+| Testing | Vitest | Native TypeScript, no Babel config; 51 unit tests for pure business logic |
 
 **Trade-offs considered:**
 - *n8n vs. direct API calls*: n8n adds operational overhead for a single-team MVP; API routes are simpler, faster to debug, and keep all logic in one codebase.
@@ -103,6 +116,30 @@ new → chatting → qualified → awaiting_docs → processing → completed
 - Cache system prompts (they don't change per request)
 - Log token usage per API call to `raw_analysis`/`raw_fields` for monitoring
 - GPT-4.1-mini fallback for extraction reduces cost on high volume
+- Groq free tier as default AI provider in dev/staging; switch to Claude for production via `AI_PROVIDER` env var
+
+### 5.5 Caching Strategy (Redis)
+Conversation history is the most frequently re-fetched data in the chat pipeline — loaded on every message to reconstruct context for the AI. Redis eliminates this repeated Supabase query:
+
+```
+User sends message
+  → Check Redis key conv:{leadId}
+      HIT  → use cached history (no DB call)
+      MISS → fetch from Supabase, warm cache (TTL 1h)
+  → Append user message + AI reply to history
+  → Save both to Supabase
+  → Invalidate Redis key (next fetch re-warms from DB)
+```
+
+TTL is intentionally short (1h) — conversation data is mutable and cache must not serve stale history after a new message.
+
+### 5.6 Rate Limiting
+`/api/chat` is rate-limited at 20 requests/minute per IP using Upstash Ratelimit with a sliding window algorithm. This prevents:
+- Chatbot abuse / prompt injection attempts
+- Runaway AI API costs from a single user
+- Supabase write amplification from repeated bot messages
+
+Returns `HTTP 429` with a user-friendly message; the frontend surfaces this inline in the chat bubble.
 
 ---
 
@@ -120,15 +157,26 @@ new → chatting → qualified → awaiting_docs → processing → completed
 | Duplicate lead (same email) | `leads` table: upsert on email; merge conversation history |
 | Supabase Storage outage | Store PDF as base64 in `documents.storage_path` as emergency fallback |
 | Network timeout | All API routes have 30s timeout; return 504 with retry hint |
+| Chat rate limit exceeded | Redis sliding window returns `429`; user sees "Too many messages, please wait" inline |
+| Redis unavailable | Chat route throws → handled by global error boundary; degrades to slower Supabase-only path |
+| Realtime connection dropped | Supabase Realtime auto-reconnects; "Live" indicator in header turns grey during reconnect |
 
 ---
 
-## 7. What I'd Add With More Time
+## 7. What's Built vs. What's Next
 
-1. **Realtime dashboard** — Supabase Realtime subscriptions for live status updates
-2. **WhatsApp integration** — Twilio/Meta API for lead capture over WhatsApp
-3. **Email parsing** — Forward incoming emails to a webhook; parse attachments automatically
-4. **Auth** — Supabase Auth with role-based access (broker vs. analyst vs. admin)
-5. **Audit log** — Every state change recorded for compliance
-6. **Vector search** — Embed conversation + document text; enable semantic lead search
-7. **Analytics** — Conversion rates, avg qualification time, top lead sources
+### Already implemented
+- ✅ Realtime dashboard — Supabase `postgres_changes` pushes lead INSERT/UPDATE live to all broker sessions
+- ✅ Analytics KPI strip — Total leads, avg score, docs pending, completed this week (derived client-side, no extra query)
+- ✅ Redis caching — Conversation history cached per lead; rate limiting on chat endpoint
+- ✅ Auth — Supabase Auth with Google SSO + email/password; broker vs. customer role routing
+- ✅ Unit tests — 51 Vitest tests for scoring, urgency, and lead-utils; pre-commit hook enforces green tests
+
+### With more time
+1. **WhatsApp integration** — Twilio/Meta API for lead capture over WhatsApp (mentioned explicitly in the brief)
+2. **Email notifications** — Resend webhook when a lead hits `qualified` or uploads docs
+3. **Audit log** — Every state change recorded for compliance (who changed what, when)
+4. **Vector search** — Embed conversation + document text; enable semantic lead search across the pipeline
+5. **Lead assignment** — Assign individual leads to specific brokers in multi-broker teams
+6. **Document comparison** — Side-by-side diff of two uploaded policies
+7. **Conversation export** — Download a lead's full chat + analysis as a branded PDF report
