@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChatWindow } from '@/components/chat/ChatWindow'
 import { createClient } from '@/lib/supabase-browser'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Shield, LogOut, MessageSquare, User, FileText, CheckCircle, Clock, Loader2, AlertCircle } from 'lucide-react'
+import { LogOut, MessageSquare, User, FileText, CheckCircle, Clock, Loader2, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { Lead, Document } from '@/lib/types'
 
@@ -34,17 +34,22 @@ export default function CustomerChatPage() {
   const [leadId, setLeadId]       = useState<string | null>(null)
   const [lead, setLead]           = useState<Lead | null>(null)
   const [documents, setDocuments] = useState<Document[]>([])
-  const [userName, setUserName]   = useState('')
+  const [userProfile, setUserProfile] = useState<{ name: string; email: string } | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
   const router   = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        supabase.from('profiles').select('name').eq('id', data.user.id).single()
-          .then(({ data: p }) => { if (p?.name) setUserName(p.name) })
-      }
+      if (!data.user) return
+      const authEmail = data.user.email ?? ''
+      supabase.from('profiles').select('name, email').eq('id', data.user.id).single()
+        .then(({ data: p }) => {
+          setUserProfile({
+            name:  p?.name  || data.user!.user_metadata?.full_name || data.user!.user_metadata?.name || '',
+            email: p?.email || authEmail,
+          })
+        })
     })
   }, [])
 
@@ -70,8 +75,9 @@ export default function CustomerChatPage() {
       {/* Header */}
       <header className="h-12 bg-[#0B0D10] border-b border-white/[0.06] px-5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-[#5E6AD2] rounded-lg flex items-center justify-center shrink-0">
-            <Shield className="w-3.5 h-3.5 text-white" />
+          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/companylogo.png" alt="SecureLife" className="block w-full h-full object-contain p-0.5" />
           </div>
           <div>
             <h1 className="text-[13px] font-semibold text-[#F7F8FA] leading-none">SecureLife Insurance</h1>
@@ -79,7 +85,7 @@ export default function CustomerChatPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {userName && <span className="text-[12px] text-[#6B7280]">Hi, {userName}</span>}
+          {userProfile?.name && <span className="text-[12px] text-[#6B7280]">Hi, {userProfile.name}</span>}
           <button onClick={signOut}
             className="flex items-center gap-1.5 text-[12px] text-[#6B7280] hover:text-[#A0A7B3] transition-colors">
             <LogOut className="w-3.5 h-3.5" />Sign out
@@ -141,6 +147,7 @@ export default function CustomerChatPage() {
                 <div className="flex-1 min-h-0 bg-[#08090B]">
                   <ChatWindow
                     leadId={leadId}
+                    userProfile={userProfile}
                     onLeadCreated={onLeadCreated}
                     onReply={() => { if (leadId) fetchLeadData(leadId) }}
                   />

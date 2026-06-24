@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Paperclip, FileText, X, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { CHAT_WELCOME_MESSAGE } from '@/lib/prompts'
+import { buildChatWelcome } from '@/lib/prompts'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 
@@ -15,31 +15,54 @@ interface AttachedFile {
 
 interface Props {
   leadId: string | null
+  userProfile?: { name: string; email: string } | null
   onLeadCreated: (id: string) => void
   onReply?: () => void
 }
 
-const WELCOME: Message = { role: 'assistant', content: CHAT_WELCOME_MESSAGE }
+function normalizeQuotes(s: string) {
+  return s.replace(/[“”„]/g, '"').replace(/[‘’‚]/g, "'")
+}
 
-function parseChoices(content: string): { text: string; choices: string[] } {
-  const match = content.match(/CHOICES:(\[[\s\S]*?\])/)
-  if (!match) return { text: content.trim(), choices: [] }
+function parseChoices(content: string): { text: string; choices: string[]; multi: boolean } {
+  const multiMatch  = content.match(/MULTI_CHOICES:(\[[\s\S]*?\])/i)
+  const singleMatch = content.match(/CHOICES:(\[[\s\S]*?\])/i)
+  const match = multiMatch ?? singleMatch
+  const multi = !!multiMatch
+  if (!match) return { text: content.trim(), choices: [], multi: false }
   try {
-    const choices = JSON.parse(match[1]) as string[]
-    const text = content.replace(/CHOICES:\[[\s\S]*?\]/, '').trim()
-    return { text, choices }
+    const choices = JSON.parse(normalizeQuotes(match[1])) as string[]
+    const pattern = multi ? /MULTI_CHOICES:\[[\s\S]*?\]/i : /CHOICES:\[[\s\S]*?\]/i
+    const text = content.replace(pattern, '').trim()
+    return { text, choices, multi }
   } catch {
-    return { text: content.trim(), choices: [] }
+    // Strip the raw CHOICES line from display even if parse failed
+    const text = content.replace(/(?:MULTI_)?CHOICES:\[[\s\S]*?\]/i, '').trim()
+    return { text, choices: [], multi: false }
   }
 }
 
-export function ChatWindow({ leadId, onLeadCreated, onReply }: Props) {
-  const [messages, setMessages] = useState<Message[]>([WELCOME])
+export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply }: Props) {
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'assistant', content: buildChatWelcome(null) }
+  ])
+
+  // Update welcome message once profile loads (async) — only if chat hasn't started
+  useEffect(() => {
+    if (!userProfile?.name) return
+    setMessages(prev => {
+      if (prev.length === 1 && prev[0].role === 'assistant') {
+        return [{ role: 'assistant', content: buildChatWelcome(userProfile.name) }]
+      }
+      return prev
+    })
+  }, [userProfile?.name])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [currentLeadId, setCurrentLeadId] = useState<string | null>(leadId)
   const [attachment, setAttachment] = useState<AttachedFile | null>(null)
+  const [selectedChoices, setSelectedChoices] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -123,6 +146,7 @@ export function ChatWindow({ leadId, onLeadCreated, onReply }: Props) {
           message: userContent,
           leadId: currentLeadId,
           documentContext: hasAttachment ? attachment!.extractedSummary : undefined,
+          userProfile: userProfile ?? undefined,
         }),
       })
       const data = await res.json()
@@ -149,7 +173,21 @@ export function ChatWindow({ leadId, onLeadCreated, onReply }: Props) {
 
   const sendChoice = async (choice: string) => {
     if (loading) return
+    setSelectedChoices([])
     await doSend(choice)
+  }
+
+  const toggleMultiChoice = (choice: string) => {
+    setSelectedChoices(prev =>
+      prev.includes(choice) ? prev.filter(c => c !== choice) : [...prev, choice]
+    )
+  }
+
+  const confirmMultiChoices = async () => {
+    if (!selectedChoices.length || loading) return
+    const text = selectedChoices.join(', ')
+    setSelectedChoices([])
+    await doSend(text)
   }
 
   const lastAssistantIdx = messages.reduce((acc, m, i) => m.role === 'assistant' ? i : acc, -1)
@@ -185,18 +223,37 @@ export function ChatWindow({ leadId, onLeadCreated, onReply }: Props) {
                   </div>
 
                   {showChoices && (
-                    <div className="flex flex-wrap gap-2 mt-2 ml-9 max-w-[85%]">
-                      {parsed.choices.map(choice => (
+                    <div className="flex flex-col gap-2 mt-2 ml-9 max-w-[85%]">
+                      <div className="flex flex-wrap gap-2">
+                        {parsed.choices.map(choice => {
+                          const isSelected = selectedChoices.includes(choice)
+                          return (
+                            <button
+                              key={choice}
+                              onClick={() => parsed.multi ? toggleMultiChoice(choice) : sendChoice(choice)}
+                              className={`text-[13px] px-3 py-1.5 rounded-lg border transition-all duration-150 cursor-pointer
+                                ${isSelected && parsed.multi
+                                  ? 'bg-[#5E6AD2] text-white border-[#5E6AD2]'
+                                  : 'border-white/[0.12] bg-[#111317] text-[#A0A7B3] hover:bg-[#5E6AD2] hover:text-white hover:border-[#5E6AD2]'
+                                }`}
+                            >
+                              {parsed.multi && isSelected && <span className="mr-1">✓</span>}
+                              {choice}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {parsed.multi && (
                         <button
-                          key={choice}
-                          onClick={() => sendChoice(choice)}
-                          className="text-[13px] px-3 py-1.5 rounded-lg border border-white/[0.12] bg-[#111317]
-                            text-[#A0A7B3] hover:bg-[#5E6AD2] hover:text-white hover:border-[#5E6AD2]
-                            transition-all duration-150 cursor-pointer"
+                          onClick={confirmMultiChoices}
+                          disabled={!selectedChoices.length}
+                          className="self-start text-[13px] px-4 py-1.5 rounded-lg
+                            bg-[#5E6AD2] hover:bg-[#6B78E7] text-white font-medium
+                            disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
-                          {choice}
+                          Confirm ({selectedChoices.length} selected)
                         </button>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
