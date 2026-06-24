@@ -7,8 +7,8 @@ const supabase = createClient(
 )
 
 const users = [
-  { email: 'broker@securelife.com', password: process.env.NEXT_PUBLIC_DEMO_BROKER_PASSWORD ?? '', role: 'broker', name: 'Rahul Mehta' },
-  { email: 'customer@demo.com',     password: process.env.NEXT_PUBLIC_DEMO_CUSTOMER_PASSWORD ?? '', role: 'customer', name: 'Priya Sharma' },
+  { email: 'broker@securelife.com', password: process.env.DEMO_BROKER_PASSWORD, role: 'broker', name: 'Rahul Mehta' },
+  { email: 'customer@demo.com',     password: process.env.DEMO_CUSTOMER_PASSWORD, role: 'customer', name: 'Priya Sharma' },
 ]
 
 for (const u of users) {
