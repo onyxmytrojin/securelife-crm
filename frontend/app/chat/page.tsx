@@ -40,17 +40,16 @@ export default function CustomerChatPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return
-      const authEmail = data.user.email ?? ''
-      supabase.from('profiles').select('name, email').eq('id', data.user.id).single()
-        .then(({ data: p }) => {
-          setUserProfile({
-            name:  p?.name  || data.user!.user_metadata?.full_name || data.user!.user_metadata?.name || '',
-            email: p?.email || authEmail,
-          })
-        })
-    })
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const authEmail = user.email ?? ''
+      const { data: p } = await supabase.from('profiles').select('name, email').eq('id', user.id).single()
+      setUserProfile({
+        name:  (p as { name?: string; email?: string } | null)?.name  || user.user_metadata?.full_name || user.user_metadata?.name || '',
+        email: (p as { name?: string; email?: string } | null)?.email || authEmail,
+      })
+    })()
   }, [])
 
   const fetchLeadData = useCallback(async (id: string) => {
