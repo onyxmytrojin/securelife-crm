@@ -18,6 +18,7 @@ interface Props {
   userProfile?: { name: string; email: string } | null
   onLeadCreated: (id: string) => void
   onReply?: () => void
+  disabled?: boolean
 }
 
 function normalizeQuotes(s: string) {
@@ -42,7 +43,7 @@ function parseChoices(content: string): { text: string; choices: string[]; multi
   }
 }
 
-export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply }: Props) {
+export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabled = false }: Props) {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: buildChatWelcome(null) }
   ])
@@ -210,7 +211,7 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply }: Prop
                   <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} items-end gap-2`}>
                     {m.role === 'assistant' && (
                       <div className="w-7 h-7 rounded-full bg-[#5E6AD2] text-white flex items-center justify-center text-[11px] font-bold shrink-0 mb-0.5">
-                        P
+                        A
                       </div>
                     )}
                     <div className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap ${
@@ -300,41 +301,50 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply }: Prop
         </div>
       )}
 
-      {/* Input bar */}
-      <div className="border-t border-white/[0.06] px-3 py-2.5 flex gap-2 items-center">
-        <button
-          onClick={() => fileRef.current?.click()}
-          className="text-[#6B7280] hover:text-[#A0A7B3] transition-colors p-1 shrink-0"
-          title="Attach insurance PDF"
-        >
-          <Paperclip className="w-4 h-4" />
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf"
-          className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
-        />
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-          placeholder={attachment?.status === 'done' ? 'Add a message or just send…' : 'Type a message…'}
-          className="flex-1 text-[14px] bg-[#111317] border border-white/[0.08] rounded-xl px-3 py-2
-            text-[#F7F8FA] placeholder:text-[#4B5058]
-            focus:outline-none focus:border-[#5E6AD2]/50 transition-colors"
-          disabled={loading || attachment?.status === 'uploading'}
-        />
-        <button
-          onClick={send}
-          disabled={loading || attachment?.status === 'uploading' || (!input.trim() && attachment?.status !== 'done')}
-          className="w-8 h-8 rounded-xl bg-[#5E6AD2] hover:bg-[#6B78E7] disabled:opacity-40
-            text-white flex items-center justify-center shrink-0 transition-colors"
-        >
-          <Send className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {/* Input bar — hidden when conversation is closed */}
+      {disabled ? (
+        <div className="border-t border-white/[0.06] px-4 py-3 flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
+          <p className="text-[13px] text-[#6B7280]">
+            This conversation is complete. Start a new session if you need further assistance.
+          </p>
+        </div>
+      ) : (
+        <div className="border-t border-white/[0.06] px-3 py-2.5 flex gap-2 items-center">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="text-[#6B7280] hover:text-[#A0A7B3] transition-colors p-1 shrink-0"
+            title="Attach insurance PDF"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+          />
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && void send()}
+            placeholder={attachment?.status === 'done' ? 'Add a message or just send…' : 'Type a message…'}
+            className="flex-1 text-[14px] bg-[#111317] border border-white/[0.08] rounded-xl px-3 py-2
+              text-[#F7F8FA] placeholder:text-[#4B5058]
+              focus:outline-none focus:border-[#5E6AD2]/50 transition-colors"
+            disabled={loading || attachment?.status === 'uploading'}
+          />
+          <button
+            onClick={() => void send()}
+            disabled={loading || attachment?.status === 'uploading' || (!input.trim() && attachment?.status !== 'done')}
+            className="w-8 h-8 rounded-xl bg-[#5E6AD2] hover:bg-[#6B78E7] disabled:opacity-40
+              text-white flex items-center justify-center shrink-0 transition-colors"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

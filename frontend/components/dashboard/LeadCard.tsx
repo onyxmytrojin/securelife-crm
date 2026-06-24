@@ -16,7 +16,7 @@ export const STALE_HOURS: Partial<Record<LeadStatus, number>> = {
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 function ScoreArc({ pct }: { pct: number }) {

@@ -204,7 +204,7 @@ export default function LeadDetail() {
   const score    = computeScore(lead)
   const urgency  = getUrgency(lead)
   const concernsSummary = formatLeadConcerns(lead)
-  const fmtDate  = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fmtDate  = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
 
   return (
     <div className="h-screen flex overflow-hidden bg-[#08090B]">

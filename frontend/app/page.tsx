@@ -27,7 +27,7 @@ const STATUSES: LeadStatus[] = ['new', 'chatting', 'qualified', 'awaiting_docs',
 type ViewMode = 'board' | 'list'
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 function ListRow({ lead, onClick }: { lead: Lead; onClick: () => void }) {

@@ -30,9 +30,24 @@ function Field({ label, value }: { label: string; value: string | number | null 
   )
 }
 
+const SESSION_STATUS: Record<string, { label: string; color: string }> = {
+  new:           { label: 'New',          color: 'text-[#6B7280]' },
+  chatting:      { label: 'In progress',  color: 'text-amber-400' },
+  qualified:     { label: 'Qualified',    color: 'text-[#5E6AD2]' },
+  awaiting_docs: { label: 'Docs needed',  color: 'text-orange-400' },
+  processing:    { label: 'Processing',   color: 'text-cyan-400' },
+  completed:     { label: 'Completed',    color: 'text-green-400' },
+  rejected:      { label: 'Closed',       color: 'text-[#6B7280]' },
+}
+
+function fmtSessionDate(d: string) {
+  return new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
 export default function CustomerChatPage() {
   const [leadId, setLeadId]       = useState<string | null>(null)
   const [lead, setLead]           = useState<Lead | null>(null)
+  const [sessions, setSessions]   = useState<Lead[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
   const [userProfile, setUserProfile] = useState<{ name: string; email: string } | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
@@ -43,6 +58,22 @@ export default function CustomerChatPage() {
   const router   = useRouter()
   const supabase = createClient()
 
+  const fetchSessions = useCallback(async (email: string) => {
+    const { data } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+    if (data && data.length > 0) {
+      setSessions(data as Lead[])
+      // Auto-load most recent non-completed session, or first session if all done
+      const active = (data as Lead[]).find(l => l.status !== 'completed' && l.status !== 'rejected')
+               ?? (data as Lead[])[0]
+      setLeadId(active.id)
+      setLead(active)
+    }
+  }, [supabase])
+
   useEffect(() => {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -51,13 +82,13 @@ export default function CustomerChatPage() {
       const { data: p } = await supabase.from('profiles').select('name, email').eq('id', user.id).single()
       const profileName  = (p as { name?: string; email?: string } | null)?.name  || user.user_metadata?.full_name || user.user_metadata?.name || ''
       const profileEmail = (p as { name?: string; email?: string } | null)?.email || authEmail
-      // Show name prompt if name is missing or is just the email prefix (DB trigger fallback)
       const emailPrefix = profileEmail.split('@')[0]
       const nameIsPlaceholder = !profileName || profileName === emailPrefix
       if (nameIsPlaceholder) setShowNamePrompt(true)
       setUserProfile({ name: profileName, email: profileEmail })
+      if (profileEmail) fetchSessions(profileEmail)
     })()
-  }, [])
+  }, [fetchSessions])
 
   useEffect(() => {
     if (showNamePrompt) setTimeout(() => nameInputRef.current?.focus(), 50)
@@ -79,11 +110,35 @@ export default function CustomerChatPage() {
       supabase.from('leads').select('*').eq('id', id).single(),
       supabase.from('documents').select('*').eq('lead_id', id).order('created_at'),
     ])
-    if (l) setLead(l)
+    if (l) { setLead(l as Lead); setSessions(prev => prev.map(s => s.id === id ? l as Lead : s)) }
     if (docs) setDocuments(docs)
-  }, [])
+  }, [supabase])
 
-  const onLeadCreated = (id: string) => { setLeadId(id); fetchLeadData(id) }
+  const switchSession = (s: Lead) => {
+    setLeadId(s.id)
+    setLead(s)
+    setDocuments([])
+    setActiveTab('chat')
+    fetchLeadData(s.id)
+  }
+
+  const startNewSession = () => {
+    setLeadId(null)
+    setLead(null)
+    setDocuments([])
+    setActiveTab('chat')
+  }
+
+  const onLeadCreated = (id: string) => {
+    setLeadId(id)
+    fetchLeadData(id)
+    // Add new session to the sessions list
+    setSessions(prev => {
+      if (prev.some(s => s.id === id)) return prev
+      return [{ id, status: 'chatting', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), source: 'chatbot' } as Lead, ...prev]
+    })
+  }
+
   const signOut = async () => { await supabase.auth.signOut(); router.push('/login') }
 
   const statusMeta = lead ? (STATUS_META[lead.status] ?? STATUS_META.new) : null
@@ -170,6 +225,7 @@ export default function CustomerChatPage() {
                   { value: 'chat',      icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat with Aria' },
                   { value: 'details',   icon: <User className="w-3.5 h-3.5" />,          label: 'My Details' },
                   { value: 'documents', icon: <FileText className="w-3.5 h-3.5" />,       label: 'My Documents' },
+                  { value: 'sessions',  icon: <Clock className="w-3.5 h-3.5" />,          label: `Sessions${sessions.length > 1 ? ` (${sessions.length})` : ''}` },
                 ].map(tab => (
                   <TabsTrigger key={tab.value} value={tab.value}
                     className="flex-1 h-11 rounded-none border-b-2 border-transparent
@@ -187,13 +243,20 @@ export default function CustomerChatPage() {
                 style={{ height: 'calc(100vh - 210px)' }}>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-3 shrink-0">
                   <div className="w-8 h-8 rounded-full bg-[#5E6AD2] text-white flex items-center justify-center text-[12px] font-bold">
-                    P
+                    A
                   </div>
                   <div>
                     <p className="text-[14px] font-semibold text-[#F7F8FA]">Aria</p>
                     <p className="text-[11px] text-[#6B7280]">SecureLife Advisor · Online</p>
                   </div>
-                  <div className="ml-auto w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
+                  {lead?.status === 'completed' && (
+                    <span className="ml-auto text-[11px] text-green-400 font-medium border border-green-900/40 bg-green-950/20 px-2 py-0.5 rounded-full">
+                      Completed
+                    </span>
+                  )}
+                  {lead?.status !== 'completed' && (
+                    <div className="ml-auto w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
+                  )}
                 </div>
                 <div className="flex-1 min-h-0 bg-[#08090B]">
                   <ChatWindow
@@ -201,6 +264,7 @@ export default function CustomerChatPage() {
                     userProfile={userProfile}
                     onLeadCreated={onLeadCreated}
                     onReply={() => { if (leadId) fetchLeadData(leadId) }}
+                    disabled={lead?.status === 'completed' || lead?.status === 'rejected'}
                   />
                 </div>
               </div>
@@ -279,6 +343,55 @@ export default function CustomerChatPage() {
                       </span>
                     </div>
                   ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Sessions tab */}
+            <TabsContent value="sessions" className="m-0">
+              <div className="bg-[#0B0D10] rounded-xl border border-white/[0.06] p-5 flex flex-col gap-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest">Your sessions</p>
+                  <button
+                    onClick={startNewSession}
+                    className="text-[12px] text-[#5E6AD2] hover:text-[#7C7CFF] font-medium transition-colors"
+                  >
+                    + New session
+                  </button>
+                </div>
+                {sessions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <MessageSquare className="w-8 h-8 text-[#1E2028] mx-auto mb-3" />
+                    <p className="text-[13px] text-[#6B7280]">No sessions yet — start a chat with Aria</p>
+                  </div>
+                ) : (
+                  sessions.map((s, i) => {
+                    const meta  = SESSION_STATUS[s.status] ?? SESSION_STATUS.new
+                    const topic = s.concerns?.length ? s.concerns.slice(0, 2).map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(', ')
+                                : s.primary_concern ? s.primary_concern.charAt(0).toUpperCase() + s.primary_concern.slice(1)
+                                : 'Insurance enquiry'
+                    const isActive = s.id === leadId
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => switchSession(s)}
+                        className={`w-full text-left rounded-xl border p-3.5 transition-all ${
+                          isActive
+                            ? 'border-[#5E6AD2]/40 bg-[#5E6AD2]/08'
+                            : 'border-white/[0.06] bg-[#111317] hover:border-white/[0.12]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[13px] font-medium text-[#F7F8FA]">Session #{sessions.length - i}</span>
+                          <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
+                        </div>
+                        <p className="text-[12px] text-[#6B7280] mb-1">{topic}</p>
+                        <p className="text-[11px] text-[#4B5058]">
+                          Started {fmtSessionDate(s.created_at)} · Updated {fmtSessionDate(s.updated_at)}
+                        </p>
+                      </button>
+                    )
+                  })
                 )}
               </div>
             </TabsContent>
