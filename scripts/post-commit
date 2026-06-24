@@ -1,0 +1,14 @@
+#!/bin/sh
+# Writes .docs-pending flag when a commit touches source files.
+# Claude Code's update-docs cron picks this up and regenerates diagrams.
+#
+# Install: cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+
+SOURCE_PATTERN="frontend/lib/types\.ts|frontend/lib/concerns\.ts|frontend/lib/prompts\.ts|frontend/lib/scoring\.ts|frontend/app/api/|frontend/components/|database/schema\.sql"
+
+CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E "$SOURCE_PATTERN")
+
+if [ -n "$CHANGED" ]; then
+  touch "$(git rev-parse --show-toplevel)/.docs-pending"
+  echo "📝 Source files changed — docs update queued for next Claude Code cron run."
+fi
