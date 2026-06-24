@@ -8,8 +8,8 @@ import { useRouter } from 'next/navigation'
 import type { Lead, Document } from '@/lib/types'
 
 const STATUS_META: Record<string, { label: string; icon: React.ElementType; color: string; cta?: string }> = {
-  new:           { label: 'Inquiry received — chat with Priya to get started', icon: Clock, color: 'text-[#6B7280]' },
-  chatting:      { label: 'In conversation with Priya', icon: MessageSquare, color: 'text-amber-400' },
+  new:           { label: 'Inquiry received — chat with Aria to get started', icon: Clock, color: 'text-[#6B7280]' },
+  chatting:      { label: 'In conversation with Aria', icon: MessageSquare, color: 'text-amber-400' },
   qualified:     { label: 'Profile complete — upload your existing policy documents so we can review your coverage', icon: FileText, color: 'text-[#5E6AD2]', cta: 'documents' },
   awaiting_docs: { label: 'Awaiting your documents — upload them in the Documents tab to proceed', icon: AlertCircle, color: 'text-orange-400', cta: 'documents' },
   processing:    { label: 'Your documents are being reviewed by our team', icon: Loader2, color: 'text-cyan-400' },
@@ -101,7 +101,7 @@ export default function CustomerChatPage() {
               <User className="w-5 h-5 text-[#5E6AD2]" />
             </div>
             <h2 className="text-[16px] font-semibold text-[#F7F8FA] mb-1">What should we call you?</h2>
-            <p className="text-[12px] text-[#6B7280] mb-4">Your advisor Priya will use this to personalise your experience.</p>
+            <p className="text-[12px] text-[#6B7280] mb-4">Your advisor Aria will use this to personalise your experience.</p>
             <input
               ref={nameInputRef}
               type="text"
@@ -167,7 +167,7 @@ export default function CustomerChatPage() {
             <div className="bg-[#0B0D10] rounded-xl border border-white/[0.06] mb-3 overflow-hidden">
               <TabsList className="h-11 w-full bg-transparent p-0 rounded-none gap-0">
                 {[
-                  { value: 'chat',      icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat with Priya' },
+                  { value: 'chat',      icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat with Aria' },
                   { value: 'details',   icon: <User className="w-3.5 h-3.5" />,          label: 'My Details' },
                   { value: 'documents', icon: <FileText className="w-3.5 h-3.5" />,       label: 'My Documents' },
                 ].map(tab => (
@@ -190,7 +190,7 @@ export default function CustomerChatPage() {
                     P
                   </div>
                   <div>
-                    <p className="text-[14px] font-semibold text-[#F7F8FA]">Priya</p>
+                    <p className="text-[14px] font-semibold text-[#F7F8FA]">Aria</p>
                     <p className="text-[11px] text-[#6B7280]">SecureLife Advisor · Online</p>
                   </div>
                   <div className="ml-auto w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
@@ -212,7 +212,7 @@ export default function CustomerChatPage() {
                 {!lead ? (
                   <div className="text-center py-10">
                     <MessageSquare className="w-8 h-8 text-[#1E2028] mx-auto mb-3" />
-                    <p className="text-[13px] text-[#6B7280]">Start a conversation with Priya to build your profile</p>
+                    <p className="text-[13px] text-[#6B7280]">Start a conversation with Aria to build your profile</p>
                   </div>
                 ) : (
                   <>
@@ -242,7 +242,7 @@ export default function CustomerChatPage() {
                     )}
                     <Field label="Existing Coverage" value={lead.existing_coverage} />
                     <p className="text-[11px] text-[#4B5058] mt-4">
-                      Something incorrect? Let Priya know in the chat and she'll update it.
+                      Something incorrect? Let Aria know in the chat and she'll update it.
                     </p>
                   </>
                 )}

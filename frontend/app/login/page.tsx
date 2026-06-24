@@ -6,7 +6,7 @@ import { Loader2, ChevronRight } from 'lucide-react'
 
 const DEMO_ACCOUNTS = [
   { label: 'Broker (internal)',   email: 'broker@securelife.com', password: process.env.NEXT_PUBLIC_DEMO_BROKER_PASSWORD ?? '', hint: 'Pipeline dashboard + analysis' },
-  { label: 'Customer (prospect)', email: 'customer@demo.com',     password: process.env.NEXT_PUBLIC_DEMO_CUSTOMER_PASSWORD ?? '', hint: 'Chat with Priya' },
+  { label: 'Customer (prospect)', email: 'customer@demo.com',     password: process.env.NEXT_PUBLIC_DEMO_CUSTOMER_PASSWORD ?? '', hint: 'Chat with Aria' },
 ]
 
 function GoogleIcon() {

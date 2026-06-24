@@ -6,6 +6,19 @@ import type { Lead, LeadStatus } from '@/lib/types'
 
 const ALL_STATUSES: LeadStatus[] = ['new', 'chatting', 'qualified', 'awaiting_docs', 'processing', 'completed', 'rejected']
 
+const ALL_CONCERNS = ['health', 'life', 'auto', 'property', 'loan', 'retirement', 'travel', 'other']
+
+const CONCERN_LABEL: Record<string, string> = {
+  health:     'Health Insurance',
+  life:       'Life Insurance',
+  auto:       'Auto / Vehicle',
+  property:   'Home / Property',
+  loan:       'Loan Protection',
+  retirement: 'Retirement / Pension',
+  travel:     'Travel Insurance',
+  other:      'Other',
+}
+
 export type SortKey = 'updated_at' | 'created_at' | 'score'
 export type SortDir = 'asc' | 'desc'
 export type UrgencyFilter = 'all' | 'overdue' | 'stale'
@@ -104,8 +117,9 @@ export function FilterBar({
   const filterRef = useRef<HTMLDivElement>(null)
   const sortRef   = useRef<HTMLDivElement>(null)
 
-  // Derived options from live data
-  const concerns = Array.from(new Set(leads.flatMap(l => [...(l.concerns ?? []), l.primary_concern].filter(Boolean)))) as string[]
+  // Concerns: fixed canonical list always shown; any non-standard values from data appended
+  const dataConcerns = leads.flatMap(l => [...(l.concerns ?? []), l.primary_concern].filter(Boolean)) as string[]
+  const concerns = Array.from(new Set([...ALL_CONCERNS, ...dataConcerns]))
   const sources  = Array.from(new Set(leads.map(l => l.source).filter(Boolean))) as string[]
 
   useEffect(() => {
@@ -231,11 +245,14 @@ export function FilterBar({
 
             {activeType === 'concern' && (
               <MenuPanel>
-                {concerns.length === 0
-                  ? <p className="px-3 py-2 text-[12px] text-[#6B7280]">No concerns in data</p>
-                  : concerns.map(c => (
-                    <MenuItem key={c} label={c} active={concernFilter.includes(c)} onClick={() => toggleConcern(c)} />
-                  ))}
+                {concerns.map(c => (
+                  <MenuItem
+                    key={c}
+                    label={CONCERN_LABEL[c] ?? c}
+                    active={concernFilter.includes(c)}
+                    onClick={() => toggleConcern(c)}
+                  />
+                ))}
               </MenuPanel>
             )}
 

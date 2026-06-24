@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   logger.info(ROUTE, `POST lead:${leadId} — summarising ${conversations.length} messages`)
 
   const transcript = conversations
-    .map(m => `${m.role === 'user' ? 'Client' : 'Priya (AI)'}: ${m.content}`)
+    .map(m => `${m.role === 'user' ? 'Client' : 'Aria (AI)'}: ${m.content}`)
     .join('\n')
 
   const prompt = `Summarise this insurance advisor conversation for a broker. Be concise and factual.

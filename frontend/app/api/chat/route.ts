@@ -8,6 +8,19 @@ import { redis, chatRatelimit } from '@/lib/redis'
 
 const ROUTE = '/api/chat'
 
+function extractConcernsFromMessage(message: string): string[] {
+  const msg = message.toLowerCase()
+  const found: string[] = []
+  if (/health|medical|hospitali|mediclaim|doctor|hospital/.test(msg)) found.push('health')
+  if (/\blife\b|term.?plan|death.?benefit|mortality/.test(msg)) found.push('life')
+  if (/\bauto\b|car |vehicle|motor|bike|two.?wheel|four.?wheel/.test(msg)) found.push('auto')
+  if (/home |property|house|flat|building|real.?estate/.test(msg)) found.push('property')
+  if (/\bloan\b|mortgage|\bemi\b|credit.?protect/.test(msg)) found.push('loan')
+  if (/retire|pension|annuity|provident|nps/.test(msg)) found.push('retirement')
+  if (/travel|trip|abroad|international|visa/.test(msg)) found.push('travel')
+  return found
+}
+
 export async function POST(req: NextRequest) {
   const t = Date.now()
   try {
@@ -63,6 +76,19 @@ export async function POST(req: NextRequest) {
       role: 'user',
       content: message,
     })
+
+    // Immediately extract and save insurance concerns from the user's message — don't wait for AI
+    const msgConcerns = extractConcernsFromMessage(message)
+    if (msgConcerns.length > 0) {
+      const { data: existingLead } = await supabaseAdmin
+        .from('leads').select('concerns, primary_concern').eq('id', currentLeadId).single()
+      const merged = Array.from(new Set([...(existingLead?.concerns ?? []), ...msgConcerns]))
+      await supabaseAdmin.from('leads').update({
+        concerns: merged,
+        primary_concern: existingLead?.primary_concern || msgConcerns[0],
+      }).eq('id', currentLeadId)
+      logger.info(ROUTE, `lead:${currentLeadId} concerns extracted from message`, { new: msgConcerns, merged })
+    }
 
     // Load conversation history — Redis cache first, Supabase fallback
     const cacheKey = `conv:${currentLeadId}`

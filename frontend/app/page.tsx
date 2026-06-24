@@ -426,7 +426,7 @@ export default function Dashboard() {
       <Dialog open={chatOpen} onOpenChange={open => { setChatOpen(open); if (!open) fetchLeads() }}>
         <DialogContent className="max-w-md h-[600px] flex flex-col p-0 gap-0">
           <DialogHeader className="px-4 py-3 border-b border-white/[0.06]">
-            <DialogTitle className="text-[14px] font-semibold">New Lead — Chat with Priya</DialogTitle>
+            <DialogTitle className="text-[14px] font-semibold">New Lead — Chat with Aria</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             <ChatWindow leadId={activeLead} onLeadCreated={onLeadCreated} />
