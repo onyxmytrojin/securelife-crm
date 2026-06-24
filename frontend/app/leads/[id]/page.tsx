@@ -11,9 +11,9 @@ import { StatusIcon, STATUS_LABEL } from '@/components/ui/status-icon'
 import { supabase } from '@/lib/supabase'
 import { computeScore } from '@/lib/scoring'
 import { getUrgency } from '@/lib/urgency'
-import { formatLeadConcerns } from '@/lib/lead-utils'
+import { getLeadConcerns } from '@/lib/lead-utils'
 import type { LeadWithDetails, LeadStatus } from '@/lib/types'
-import { ArrowLeft, MessageSquare, FileText, BarChart3, ChevronDown, Check, ChevronRight, Info, Trash2 } from 'lucide-react'
+import { ArrowLeft, MessageSquare, FileText, BarChart3, ChevronDown, Check, ChevronRight, Info, Trash2, Pencil, X } from 'lucide-react'
 
 const ALL_STATUSES: LeadStatus[] = ['new', 'chatting', 'qualified', 'awaiting_docs', 'processing', 'completed', 'rejected']
 
@@ -105,9 +105,13 @@ export default function LeadDetail() {
   const router     = useRouter()
   const [lead, setLead]             = useState<LeadWithDetails | null>(null)
   const [loading, setLoading]       = useState(true)
-  const [statusOpen, setStatusOpen] = useState(false)
+  const [statusOpen, setStatusOpen]       = useState(false)
   const [lastActivityAt, setLastActivityAt] = useState<string | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [editingNotes, setEditingNotes]   = useState(false)
+  const [notesVal, setNotesVal]           = useState('')
+  const [notesSaving, setNotesSaving]     = useState(false)
+  const dropdownRef  = useRef<HTMLDivElement>(null)
+  const notesRef     = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -179,6 +183,25 @@ export default function LeadDetail() {
     router.push('/')
   }
 
+  const startEditingNotes = () => {
+    setNotesVal(lead?.notes ?? '')
+    setEditingNotes(true)
+    setTimeout(() => { notesRef.current?.focus(); notesRef.current?.select() }, 50)
+  }
+
+  const saveNotes = async () => {
+    if (!lead) return
+    setNotesSaving(true)
+    setLead(prev => prev ? { ...prev, notes: notesVal || null } : prev)
+    await fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, notes: notesVal || null }),
+    })
+    setNotesSaving(false)
+    setEditingNotes(false)
+  }
+
   const changeStatus = async (newStatus: LeadStatus) => {
     if (!lead || lead.status === newStatus) return
     setStatusOpen(false)
@@ -207,11 +230,16 @@ export default function LeadDetail() {
     </div>
   )
 
-  const initials = lead.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '?'
-  const score    = computeScore(lead)
-  const urgency  = getUrgency(lead)
-  const concernsSummary = formatLeadConcerns(lead)
-  const fmtDate  = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+  const initials     = lead.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '?'
+  const score        = computeScore(lead)
+  const urgency      = getUrgency(lead)
+  const allConcerns  = getLeadConcerns(lead)
+  const fmtDate      = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+  const fmtIncome    = (n: number) => {
+    if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1).replace(/\.0$/, '')} Cr`
+    if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1).replace(/\.0$/, '')}L`
+    return `₹${n.toLocaleString('en-IN')}`
+  }
 
   return (
     <div className="h-screen flex overflow-hidden bg-[#08090B]">
@@ -336,52 +364,118 @@ export default function LeadDetail() {
         {/* Body */}
         <div className="flex-1 flex overflow-hidden">
           {/* Properties sidebar */}
-          <div className="w-56 shrink-0 border-r border-white/[0.06] overflow-y-auto bg-[#0B0D10]">
-            <div className="px-4 py-4">
-              <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest mb-3">Properties</p>
+          <div className="w-60 shrink-0 border-r border-white/[0.06] overflow-y-auto bg-[#0B0D10]">
+            <div className="px-4 py-4 space-y-4">
 
-              {concernsSummary !== '—' && (
-                <div className="mb-4 pb-3 border-b border-white/[0.05]">
-                  <p className="text-[11px] text-[#6B7280] mb-0.5">Insurance Interests</p>
-                  <p className="text-[15px] font-semibold text-[#F7F8FA] capitalize">{concernsSummary}</p>
-                </div>
-              )}
-              {lead.annual_income && (
-                <div className="mb-4 pb-3 border-b border-white/[0.05]">
-                  <p className="text-[11px] text-[#6B7280] mb-0.5">Annual Income</p>
-                  <p className="text-[15px] font-semibold text-[#F7F8FA]">₹{Number(lead.annual_income).toLocaleString('en-IN')}</p>
-                </div>
-              )}
-              {lead.existing_coverage && (
-                <div className="mb-4 pb-3 border-b border-white/[0.05]">
-                  <p className="text-[11px] text-[#6B7280] mb-0.5">Existing Coverage</p>
-                  <p className="text-[13px] font-medium text-[#A0A7B3]">{lead.existing_coverage}</p>
+              {/* Insurance interests — chips */}
+              {allConcerns.length > 0 && (
+                <div className="pb-4 border-b border-white/[0.05]">
+                  <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest mb-2">Insurance Interests</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allConcerns.map(c => (
+                      <span key={c} className="text-[11px] px-2 py-0.5 rounded-full bg-[#5E6AD2]/10 text-[#8B97E8] border border-[#5E6AD2]/20 capitalize font-medium">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {[
-                ['Occupation',  lead.occupation],
-                ['Location',    lead.location],
-                ['Age',         lead.age != null ? `${lead.age} years` : null],
-                ['Family Size', lead.family_size != null ? `${lead.family_size} member${Number(lead.family_size) !== 1 ? 's' : ''}` : null],
-              ].map(([label, value]) => value != null ? (
-                <div key={String(label)} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
-                  <span className="text-[12px] text-[#6B7280]">{label}</span>
-                  <span className="text-[13px] font-medium text-[#A0A7B3]">{String(value)}</span>
+              {/* Financial profile */}
+              {(lead.annual_income || lead.occupation) && (
+                <div className="pb-4 border-b border-white/[0.05] space-y-3">
+                  <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest">Financial Profile</p>
+                  {lead.annual_income && (
+                    <div>
+                      <p className="text-[11px] text-[#6B7280] mb-0.5">Annual Income</p>
+                      <p className="text-[15px] font-semibold text-[#F7F8FA]">{fmtIncome(Number(lead.annual_income))}</p>
+                      <p className="text-[11px] text-[#4B5058]">₹{Number(lead.annual_income).toLocaleString('en-IN')}</p>
+                    </div>
+                  )}
+                  {lead.occupation && (
+                    <div>
+                      <p className="text-[11px] text-[#6B7280] mb-0.5">Occupation</p>
+                      <p className="text-[13px] font-medium text-[#A0A7B3] leading-snug">{lead.occupation}</p>
+                    </div>
+                  )}
                 </div>
-              ) : null)}
+              )}
 
-              {[['Source', lead.source], ['Notes', lead.notes]].map(([label, value]) => (
-                <div key={String(label)} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
-                  <span className="text-[12px] text-[#6B7280]">{label}</span>
-                  <span className="text-[12px] text-[#6B7280]">
-                    {value ? String(value) : <span className="text-[#3A3A3A]">—</span>}
-                  </span>
+              {/* Personal details */}
+              {(lead.age != null || lead.family_size != null || lead.location || lead.existing_coverage) && (
+                <div className="pb-4 border-b border-white/[0.05] space-y-2">
+                  <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest">Personal Details</p>
+                  {[
+                    ['Age',              lead.age != null ? `${lead.age} yrs` : null],
+                    ['Family',           lead.family_size != null ? `${lead.family_size} member${Number(lead.family_size) !== 1 ? 's' : ''}` : null],
+                    ['Location',         lead.location],
+                    ['Existing Cover',   lead.existing_coverage],
+                  ].filter(([, v]) => v != null).map(([label, value]) => (
+                    <div key={String(label)} className="flex items-start justify-between gap-2">
+                      <span className="text-[12px] text-[#6B7280] shrink-0">{label}</span>
+                      <span className="text-[12px] font-medium text-[#A0A7B3] text-right">{String(value)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* Source */}
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-[#4B5058] uppercase tracking-widest font-semibold">Source</span>
+                <span className="text-[12px] text-[#6B7280] capitalize">{lead.source ?? '—'}</span>
+              </div>
+
+              {/* Notes — editable by broker */}
+              <div className="pb-4 border-b border-white/[0.05]">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest">Broker Notes</p>
+                  {!editingNotes && (
+                    <button onClick={startEditingNotes}
+                      className="flex items-center gap-1 text-[11px] text-[#6B7280] hover:text-[#5E6AD2] transition-colors">
+                      <Pencil className="w-3 h-3" />{lead.notes ? 'Edit' : 'Add note'}
+                    </button>
+                  )}
+                </div>
+                {editingNotes ? (
+                  <div className="space-y-2">
+                    <textarea
+                      ref={notesRef}
+                      value={notesVal}
+                      onChange={e => setNotesVal(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') setEditingNotes(false) }}
+                      rows={4}
+                      placeholder="Add internal notes about this lead…"
+                      className="w-full bg-[#111317] border border-[#5E6AD2]/30 rounded-lg px-3 py-2
+                        text-[12px] text-[#E8EAF0] placeholder:text-[#3A3A3A] resize-none
+                        focus:outline-none focus:border-[#5E6AD2]/60 transition-colors leading-relaxed"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => void saveNotes()}
+                        disabled={notesSaving}
+                        className="flex-1 text-[12px] py-1.5 rounded-lg bg-[#5E6AD2] hover:bg-[#6B78E7]
+                          text-white font-medium disabled:opacity-50 transition-colors"
+                      >
+                        {notesSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setEditingNotes(false)}
+                        className="w-8 flex items-center justify-center rounded-lg border border-white/[0.08]
+                          text-[#6B7280] hover:text-[#A0A7B3] transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : lead.notes ? (
+                  <p className="text-[12px] text-[#A0A7B3] leading-relaxed whitespace-pre-wrap">{lead.notes}</p>
+                ) : (
+                  <p className="text-[12px] text-[#3A3A3A] italic">No notes yet</p>
+                )}
+              </div>
 
               {/* Score */}
-              <div className="mt-3 pt-3 border-t border-white/[0.06]">
+              <div>
                 <p className="text-[10px] font-semibold text-[#4B5058] uppercase tracking-widest mb-2">Score</p>
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="flex-1 h-1 bg-white/[0.06] rounded-full overflow-hidden">
@@ -389,7 +483,7 @@ export default function LeadDetail() {
                       style={{ width: `${score.total}%` }} />
                   </div>
                   <span className="text-[13px] font-bold text-[#F7F8FA] tabular-nums">{score.total}</span>
-                  <span className={`text-[10px] font-bold px-1 rounded ${
+                  <span className={`text-[10px] font-bold px-1.5 py-px rounded ${
                     score.grade === 'A' ? 'bg-green-950/60 text-green-400' :
                     score.grade === 'B' ? 'bg-blue-950/60 text-blue-400' :
                     score.grade === 'C' ? 'bg-amber-950/60 text-amber-400' :
@@ -397,9 +491,10 @@ export default function LeadDetail() {
                   }`}>{score.grade}</span>
                 </div>
                 <p className="text-[11px] text-[#6B7280] flex items-center gap-1">
-                  <Info className="w-3 h-3 shrink-0" />See Score tab
+                  <Info className="w-3 h-3 shrink-0" />See Score tab for breakdown
                 </p>
               </div>
+
             </div>
           </div>
 
