@@ -1,0 +1,36 @@
+---
+title: "SecureLife — BraindAI Assessment Notes"
+author: "Candidate"
+date: 2026-06-22
+format: html
+---
+
+# Summary
+
+This QMD is a rapid, portable report capturing architecture decisions, prompt engineering templates, validation strategy, and next steps for the SecureLife MVP.
+
+## Architecture Snapshot
+
+- Frontend: Next.js 16 (App Router, TypeScript) — fast iteration and Vercel-friendly.
+- Database: Supabase (Postgres) — quick auth + row-level security, easy dev setup.
+- AI: Anthropic Claude for extraction & analysis; fallback to GPT-4.1-mini for edge cases.
+- PDF processing: `pdf-parse` + OCR fallback (Tesseract).
+
+## Prompting Strategy
+
+- Use structured JSON outputs and Zod validation.
+- Two-step extraction: raw -> normalize.
+- Iterative repair loops for high-value fields.
+
+## Deliverable Checklist
+
+- [ ] Chatbot captures leads and writes to DB
+- [ ] Upload & extract sample policies
+- [ ] Dashboard shows lead pipeline
+- [ ] Loom walkthrough recorded
+
+## Next steps
+
+1. Harden schema validation and add human-in-the-loop review UI.
+2. Add background jobs for large document processing.
+3. Add unit tests for prompt outputs.

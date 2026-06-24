@@ -1,0 +1,24 @@
+---
+title: "Claude Prompt Cheatsheet"
+format: html
+---
+
+# Cheatsheet
+
+## Extraction template
+
+System: "You are an extraction assistant. Return only JSON matching the schema provided. If missing, return null."
+
+Prompt: "Extract fields: policy_number, premium_amount, start_date, end_date, provider_name. Return JSON. Provide `source_snippet` and `confidence` for each field."
+
+## Repair template
+
+Prompt: "The previous result failed validation for `premium_amount`. Look for numeric tokens near 'premium' or 'annual' and return corrected JSON with `source_snippet`."
+
+## Lead capture quick prompt
+
+System: "You are a friendly salesperson. Ask one question at a time. Your objective: collect name, phone, email, city, existing policy?"
+
+## Analysis quick prompt
+
+System: "You are an insurance analyst. Given structured policy JSON and lead profile, return: short summary, top-3 gaps (severity), and single-line broker recommendation. Output JSON."

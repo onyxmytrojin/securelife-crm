@@ -1,0 +1,82 @@
+erDiagram
+    leads {
+        uuid id PK
+        timestamptz created_at
+        timestamptz updated_at
+        text name
+        text email
+        text phone
+        text status
+        int score
+        text source
+        int age
+        text occupation
+        numeric annual_income
+        int family_size
+        text existing_coverage
+        text primary_concern
+        text location
+        text notes
+    }
+
+    conversations {
+        uuid id PK
+        uuid lead_id FK
+        timestamptz created_at
+        text role
+        text content
+    }
+
+    documents {
+        uuid id PK
+        uuid lead_id FK
+        timestamptz created_at
+        text filename
+        text storage_path
+        int file_size
+        text mime_type
+        text status
+        text error
+    }
+
+    extracted_data {
+        uuid id PK
+        uuid document_id FK
+        uuid lead_id FK
+        timestamptz created_at
+        text policy_number
+        text policy_type
+        text provider_name
+        text policyholder_name
+        numeric sum_insured
+        numeric premium_amount
+        text premium_frequency
+        date coverage_start
+        date coverage_end
+        date renewal_date
+        text pre_existing_conditions
+        text exclusions
+        text waiting_period
+        text claim_history
+        jsonb raw_fields
+    }
+
+    analyses {
+        uuid id PK
+        uuid lead_id FK
+        timestamptz created_at
+        timestamptz updated_at
+        text coverage_gaps
+        text potential_savings
+        text risk_flags
+        text recommendation
+        text priority
+        int confidence_score
+        jsonb raw_analysis
+    }
+
+    leads ||--o{ conversations : "has"
+    leads ||--o{ documents : "uploads"
+    leads ||--o| analyses : "receives"
+    documents ||--o| extracted_data : "produces"
+    leads ||--o{ extracted_data : "aggregates"

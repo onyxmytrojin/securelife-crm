@@ -1,0 +1,48 @@
+flowchart TD
+    subgraph Browser["Browser (Next.js 16)"]
+        Dashboard["/ Pipeline Dashboard"]
+        LeadDetail["/leads/[id] Lead Detail"]
+        ChatUI["Chat Window"]
+        UploadUI["PDF Upload Zone"]
+        AnalysisUI["Analysis Panel"]
+    end
+
+    subgraph APIRoutes["Next.js API Routes (Node.js)"]
+        ChatAPI["/api/chat\nLead capture chatbot"]
+        LeadsAPI["/api/leads\nCRUD operations"]
+        DocsAPI["/api/documents\nPDF upload + extract"]
+        AnalysisAPI["/api/analysis\nGap analysis"]
+    end
+
+    subgraph AILayer["AI Layer"]
+        Claude["Claude claude-sonnet-4-6\nChatbot · Extraction · Analysis"]
+        GPT["GPT-4.1-mini\nExtraction fallback"]
+        PDFParse["pdf-parse\nText extraction"]
+    end
+
+    subgraph DataLayer["Data Layer (Supabase)"]
+        PG[("PostgreSQL\nleads · conversations\ndocuments · extracted_data\nanalyses")]
+        Storage["Supabase Storage\nPDF files"]
+    end
+
+    Dashboard -->|fetch leads| LeadsAPI
+    LeadDetail -->|fetch lead + docs + analysis| LeadsAPI
+    ChatUI -->|POST message| ChatAPI
+    UploadUI -->|POST PDF| DocsAPI
+    AnalysisUI -->|POST trigger| AnalysisAPI
+
+    ChatAPI -->|multi-turn chat| Claude
+    ChatAPI -->|upsert lead + messages| PG
+
+    DocsAPI -->|store file| Storage
+    DocsAPI -->|extract text| PDFParse
+    PDFParse -->|raw text| Claude
+    Claude -->|structured JSON| DocsAPI
+    DocsAPI -->|fallback| GPT
+    DocsAPI -->|save extracted fields| PG
+
+    AnalysisAPI -->|read lead + extractions| PG
+    AnalysisAPI -->|generate analysis| Claude
+    AnalysisAPI -->|save analysis| PG
+
+    LeadsAPI <-->|CRUD| PG
