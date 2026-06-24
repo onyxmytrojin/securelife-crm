@@ -4,12 +4,22 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { chat, type Message } from '@/lib/ai'
 import { buildChatSystemPrompt, CHAT_WELCOME_MESSAGE } from '@/lib/prompts'
 import { logger } from '@/lib/logger'
+import { redis, chatRatelimit } from '@/lib/redis'
 
 const ROUTE = '/api/chat'
 
 export async function POST(req: NextRequest) {
   const t = Date.now()
   try {
+    // Rate limiting
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anonymous'
+    const { success, remaining } = await chatRatelimit.limit(ip)
+    if (!success) {
+      logger.warn(ROUTE, `rate limit hit for ip:${ip}`)
+      return NextResponse.json({ error: 'Too many messages. Please wait a moment.' }, { status: 429 })
+    }
+    logger.debug(ROUTE, `ip:${ip} remaining quota: ${remaining}/20`)
+
     const { message, leadId, documentContext, userProfile } = await req.json()
     if (!message?.trim()) return NextResponse.json({ error: 'Message required' }, { status: 400 })
 
@@ -46,16 +56,24 @@ export async function POST(req: NextRequest) {
       content: message,
     })
 
-    // Load full conversation history
-    const { data: history } = await supabaseAdmin
-      .from('conversations')
-      .select('role, content')
-      .eq('lead_id', currentLeadId)
-      .order('created_at', { ascending: true })
-
-    const messages: Message[] = (history ?? [])
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    // Load conversation history — Redis cache first, Supabase fallback
+    const cacheKey = `conv:${currentLeadId}`
+    let messages: Message[] = []
+    const cached = await redis.get<Message[]>(cacheKey)
+    if (cached) {
+      messages = cached
+      logger.debug(ROUTE, `lead:${currentLeadId} history from cache (${cached.length} msgs)`)
+    } else {
+      const { data: history } = await supabaseAdmin
+        .from('conversations')
+        .select('role, content')
+        .eq('lead_id', currentLeadId)
+        .order('created_at', { ascending: true })
+      messages = (history ?? [])
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+      logger.debug(ROUTE, `lead:${currentLeadId} history from db (${messages.length} msgs)`)
+    }
 
     if (documentContext) {
       messages.push({
@@ -109,12 +127,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Save assistant reply
+    // Save assistant reply + invalidate Redis cache so next fetch is fresh
     await supabaseAdmin.from('conversations').insert({
       lead_id: currentLeadId,
       role: 'assistant',
       content: cleanReply,
     })
+    await redis.del(`conv:${currentLeadId}`)
 
     logger.info(ROUTE, `POST done lead:${currentLeadId} (${Date.now() - t}ms total)`)
     return NextResponse.json({ reply: cleanReply, leadId: currentLeadId })

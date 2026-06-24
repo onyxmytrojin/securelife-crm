@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DndContext, DragOverlay, closestCenter,
@@ -20,7 +20,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { getLeadConcerns, formatLeadConcerns } from '@/lib/lead-utils'
 import { StatusIcon, STATUS_LABEL } from '@/components/ui/status-icon'
 import type { Lead, LeadStatus } from '@/lib/types'
-import { RefreshCw, LogOut, LayoutGrid, List, Command } from 'lucide-react'
+import { RefreshCw, LogOut, LayoutGrid, List, Command, TrendingUp, Clock, CheckCircle2, Users } from 'lucide-react'
 
 const STATUSES: LeadStatus[] = ['new', 'chatting', 'qualified', 'awaiting_docs', 'processing', 'completed', 'rejected']
 
@@ -147,6 +147,45 @@ export default function Dashboard() {
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
+  // Supabase Realtime — live lead updates
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
+  useEffect(() => {
+    const channel = supabase
+      .channel('leads-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' },
+        (payload: { new: Record<string, unknown> }) => {
+          const incoming = payload.new as unknown as Lead
+          setLeads(prev => {
+            if (prev.some(l => l.id === incoming.id)) return prev
+            return [incoming, ...prev]
+          })
+        }
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' },
+        (payload: { new: Record<string, unknown> }) => {
+          const updated = payload.new as unknown as Lead
+          setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
+        }
+      )
+      .subscribe((status: string) => {
+        setRealtimeConnected(status === 'SUBSCRIBED')
+      })
+    return () => { void supabase.removeChannel(channel) }
+  }, [supabase])
+
+  // Analytics derived from loaded leads — no extra API call needed
+  const analytics = useMemo(() => {
+    const total = leads.length
+    const avgScore = total > 0
+      ? Math.round(leads.reduce((sum, l) => sum + computeScore(l).total, 0) / total) : 0
+    const docsPending = leads.filter(l => l.status === 'awaiting_docs').length
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 3600_000)
+    const completedWeek = leads.filter(l =>
+      l.status === 'completed' && new Date(l.updated_at) > oneWeekAgo
+    ).length
+    return { total, avgScore, docsPending, completedWeek }
+  }, [leads])
+
   // Global keyboard shortcuts
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -236,8 +275,14 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
         <header className="shrink-0 h-11 border-b border-white/[0.06] bg-[#0B0D10] px-4 flex items-center justify-between gap-3">
-          {/* Stats */}
+          {/* Stats + Live indicator */}
           <div className="flex items-center gap-4 text-[13px] text-[#6B7280]">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${realtimeConnected ? 'bg-green-400 shadow-[0_0_4px_rgba(34,197,94,0.7)]' : 'bg-[#3A3A3A]'}`} />
+              <span className={`text-[11px] font-medium ${realtimeConnected ? 'text-green-400' : 'text-[#4B5058]'}`}>
+                {realtimeConnected ? 'Live' : 'Connecting…'}
+              </span>
+            </div>
             <span><span className="font-semibold text-[#A0A7B3]">{leads.length}</span> leads</span>
             <span><span className="font-semibold text-green-400">{grouped.completed?.length ?? 0}</span> completed</span>
             <span><span className="font-semibold text-purple-400">{grouped.qualified?.length ?? 0}</span> qualified</span>
@@ -304,6 +349,26 @@ export default function Dashboard() {
           filteredCount={filteredLeads.length}
           totalCount={leads.length}
         />
+
+        {/* Analytics KPI strip */}
+        {!loading && leads.length > 0 && (
+          <div className="shrink-0 px-4 py-2 border-b border-white/[0.04] grid grid-cols-4 gap-3">
+            {[
+              { icon: Users,        label: 'Total Leads',       value: analytics.total,         color: 'text-[#A0A7B3]' },
+              { icon: TrendingUp,   label: 'Avg Score',         value: `${analytics.avgScore}`, color: analytics.avgScore >= 70 ? 'text-green-400' : analytics.avgScore >= 45 ? 'text-amber-400' : 'text-red-400' },
+              { icon: Clock,        label: 'Awaiting Docs',     value: analytics.docsPending,   color: analytics.docsPending > 0 ? 'text-amber-400' : 'text-[#6B7280]' },
+              { icon: CheckCircle2, label: 'Completed (7 days)',value: analytics.completedWeek, color: analytics.completedWeek > 0 ? 'text-green-400' : 'text-[#6B7280]' },
+            ].map(({ icon: Icon, label, value, color }) => (
+              <div key={label} className="flex items-center gap-2.5 bg-[#0B0D10] rounded-lg border border-white/[0.05] px-3 py-2">
+                <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                <div className="min-w-0">
+                  <p className={`text-[15px] font-semibold tabular-nums leading-none ${color}`}>{value}</p>
+                  <p className="text-[10px] text-[#4B5058] mt-0.5 truncate">{label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Board / List */}
         <main className="flex-1 overflow-hidden">
