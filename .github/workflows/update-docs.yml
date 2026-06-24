@@ -1,0 +1,71 @@
+name: Auto-update Architecture Docs
+
+# Triggers:
+#   1. Push to master that touches source files (skip if the bot made the commit)
+#   2. Weekly cron every Monday at 02:00 UTC
+#   3. Manual dispatch from GitHub Actions UI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'frontend/lib/types.ts'
+      - 'frontend/lib/concerns.ts'
+      - 'frontend/lib/prompts.ts'
+      - 'frontend/lib/scoring.ts'
+      - 'frontend/app/api/**'
+      - 'frontend/components/**'
+      - 'database/schema.sql'
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+# Only one run at a time — cancel any in-flight run if a new push arrives
+concurrency:
+  group: update-docs
+  cancel-in-progress: true
+
+jobs:
+  update-docs:
+    name: Regenerate diagrams & architecture doc
+    runs-on: ubuntu-latest
+
+    # Don't run if the commit that triggered us was made by the bot itself
+    # (prevents infinite loop when the bot commits updated docs)
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          # Use a PAT or the default GITHUB_TOKEN — needed to push back
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Anthropic SDK
+        run: npm install --no-save @anthropic-ai/sdk
+        working-directory: ${{ github.workspace }}
+
+      - name: Run doc updater
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/update-docs.mjs
+
+      - name: Commit updated docs (if changed)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add diagrams/ docs/architecture.md database/schema.sql
+          # Only commit if something actually changed
+          if git diff --staged --quiet; then
+            echo "No doc changes detected — nothing to commit."
+          else
+            git commit -m "docs: auto-update diagrams and architecture [skip ci]"
+            git push
+            echo "Docs updated and pushed."
+          fi

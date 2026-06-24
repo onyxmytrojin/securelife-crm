@@ -1,38 +1,54 @@
 flowchart TD
-    subgraph Browser["Browser (Next.js 16)"]
-        Dashboard["/ Pipeline Dashboard"]
-        LeadDetail["/leads/[id] Lead Detail"]
-        ChatUI["Chat Window"]
+    subgraph Browser["Browser (Next.js 16 App Router)"]
+        Dashboard["/ Pipeline Dashboard\n(kanban + KPI strip)"]
+        LeadDetail["/leads/[id] Lead Detail\n(chat · docs · analysis · score)"]
+        ChatPortal["/chat Customer Portal\n(sessions sidebar · multi-session)"]
+        ChatUI["ChatWindow\n(CHOICES pills · NUMBER_INPUT widgets)"]
         UploadUI["PDF Upload Zone"]
-        AnalysisUI["Analysis Panel"]
+        AnalysisUI["Analysis Panel\n(Arjun Kapoor persona)"]
     end
 
-    subgraph APIRoutes["Next.js API Routes (Node.js)"]
-        ChatAPI["/api/chat\nLead capture chatbot"]
-        LeadsAPI["/api/leads\nCRUD operations"]
-        DocsAPI["/api/documents\nPDF upload + extract"]
-        AnalysisAPI["/api/analysis\nGap analysis"]
+    subgraph APIRoutes["Next.js API Routes (Node.js — Vercel Edge)"]
+        ChatAPI["/api/chat\nLead capture · regex extraction\nRedis cache · rate limit"]
+        LeadsAPI["/api/leads\nCRUD + PATCH notes/status"]
+        DocsAPI["/api/documents\nPDF upload + extraction"]
+        AnalysisAPI["/api/analysis\nSenior consultant gap analysis"]
+        BackfillAPI["/api/leads/backfill-concerns\nHistorical data repair"]
     end
 
     subgraph AILayer["AI Layer"]
-        Claude["Claude claude-sonnet-4-6\nChatbot · Extraction · Analysis"]
+        Groq["Groq — llama-3.3-70b\nDefault chatbot provider"]
+        Claude["Claude claude-sonnet-4-6\nAnalysis · Extraction · Fallback chat"]
         GPT["GPT-4.1-mini\nExtraction fallback"]
-        PDFParse["pdf-parse\nText extraction"]
+        PDFParse["pdf-parse\nText layer extraction"]
+        RegexExtract["Regex Engine (concerns.ts)\nPhone · age · income · occupation\nImmediate — no AI wait"]
     end
 
-    subgraph DataLayer["Data Layer (Supabase)"]
-        PG[("PostgreSQL\nleads · conversations\ndocuments · extracted_data\nanalyses")]
+    subgraph DataLayer["Data Layer"]
+        PG[("Supabase PostgreSQL\nleads · conversations\ndocuments · extracted_data\nanalyses")]
+        Realtime["Supabase Realtime\npostgres_changes\nINSERT + UPDATE push"]
         Storage["Supabase Storage\nPDF files"]
+        Redis["Upstash Redis\nConversation cache (1h TTL)\nSliding window rate limiter"]
     end
 
     Dashboard -->|fetch leads| LeadsAPI
     LeadDetail -->|fetch lead + docs + analysis| LeadsAPI
-    ChatUI -->|POST message| ChatAPI
+    LeadDetail -.->|subscribe| Realtime
+    Dashboard -.->|subscribe| Realtime
+    ChatPortal -->|sessions list| LeadsAPI
+    ChatPortal --> ChatUI
+    ChatUI -->|POST message + parentLeadId| ChatAPI
     UploadUI -->|POST PDF| DocsAPI
     AnalysisUI -->|POST trigger| AnalysisAPI
 
-    ChatAPI -->|multi-turn chat| Claude
-    ChatAPI -->|upsert lead + messages| PG
+    ChatAPI -->|cache miss| PG
+    ChatAPI -->|cache hit / write| Redis
+    ChatAPI -->|multi-turn chat| Groq
+    Groq -.->|fallback| Claude
+    ChatAPI -->|user message| RegexExtract
+    RegexExtract -->|immediate field update| PG
+    ChatAPI -->|LEAD_DATA from AI| PG
+    ChatAPI -->|syncProfileToSiblings| PG
 
     DocsAPI -->|store file| Storage
     DocsAPI -->|extract text| PDFParse
@@ -45,4 +61,6 @@ flowchart TD
     AnalysisAPI -->|generate analysis| Claude
     AnalysisAPI -->|save analysis| PG
 
+    Realtime -->|live update| LeadDetail
+    Realtime -->|live update| Dashboard
     LeadsAPI <-->|CRUD| PG

@@ -15,8 +15,12 @@ erDiagram
         int family_size
         text existing_coverage
         text primary_concern
+        text[] concerns
         text location
         text notes
+        uuid parent_lead_id FK
+        text session_type
+        int ticket_number
     }
 
     conversations {
@@ -80,3 +84,4 @@ erDiagram
     leads ||--o| analyses : "receives"
     documents ||--o| extracted_data : "produces"
     leads ||--o{ extracted_data : "aggregates"
+    leads ||--o{ leads : "follow_up (parent_lead_id)"

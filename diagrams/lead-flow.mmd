@@ -1,49 +1,73 @@
 sequenceDiagram
     participant U as Prospect
-    participant Chat as ChatUI
+    participant Portal as /chat Portal
     participant API as /api/chat
-    participant Claude as Claude claude-sonnet-4-6
+    participant Regex as Regex Engine
+    participant Groq as Groq (Llama)
     participant DB as Supabase
+    participant Broker as Broker Dashboard
 
-    Note over U,DB: Phase 1 — Lead Capture
-    U->>Chat: "Hi, I want to explore insurance options"
-    Chat->>API: POST {message, leadId: null}
-    API->>DB: create lead (status: chatting)
-    API->>Claude: system prompt + user message
-    Claude-->>API: "Hi! I'm Priya from SecureLife. Could you share your name?"
-    API->>DB: save assistant message
-    API-->>Chat: stream response
-    Chat-->>U: display reply
+    Note over U,Broker: Phase 1 — Session Start
+    U->>Portal: Opens /chat (logged in via Supabase Auth)
+    Portal->>Portal: Load existing sessions for this email
+    Portal->>U: Show sessions sidebar + "New session" button
+    U->>Portal: Clicks "New inquiry" (or "Follow-up on existing")
+    Portal->>API: POST {message, sessionType, parentLeadId?}
+    API->>DB: INSERT lead (status: chatting, ticket_number via sequence)
+    API-->>Portal: {leadId, reply: "Hi [Name]! I'm Aria..."}
+    Portal-->>U: Welcome message + structured inputs
 
-    U->>Chat: "My name is Rahul, I'm 34, married with 2 kids"
-    Chat->>API: POST {message, leadId}
-    API->>Claude: full conversation history
-    Claude-->>API: reply + LEAD_DATA:{name,age,family_size}
-    API->>DB: upsert lead fields, save messages
-    API-->>Chat: stream response
+    Note over U,Broker: Phase 2 — Conversational Capture
+    U->>Portal: Selects occupation from CHOICES pill
+    Portal->>API: POST {message: "Salaried – Government / PSU"}
+    API->>Regex: extractFieldsFromMessage()
+    Regex-->>API: {occupation: "Salaried – Government / PSU"}
+    API->>DB: UPDATE lead {occupation} immediately
+    API->>Groq: full conversation history
+    Groq-->>API: reply + LEAD_DATA:{...} (if AI emits it)
+    API->>DB: UPDATE lead from LEAD_DATA fields
+    API->>DB: syncProfileToSiblings() — propagate to all leads with same email
 
-    Note over U,DB: Phase 2 — Qualification & Handoff
-    U->>Chat: finishes qualification questions
-    API->>DB: update lead status → qualified
-    API->>DB: update score (0–100)
-    Chat-->>U: "Please upload your existing policy documents"
-    API->>DB: update status → awaiting_docs
+    U->>Portal: NUMBER_INPUT widget → enters age "35"
+    Portal->>API: POST {message: "I am 35 years old"}
+    API->>Regex: extractFieldsFromMessage()
+    Regex-->>API: {age: 35}
+    API->>DB: UPDATE lead {age: 35} immediately
 
-    Note over U,DB: Phase 3 — Document Processing
-    U->>Chat: uploads PDF
-    Chat->>API: POST /api/documents {file, leadId}
-    API->>DB: create document record (status: processing)
-    API->>API: pdf-parse extracts raw text
-    API->>Claude: extraction prompt + raw text
-    Claude-->>API: structured JSON {policy_type, sum_insured, ...}
-    API->>DB: save extracted_data
-    API->>DB: update document status → extracted
-    API->>DB: update lead status → processing
+    U->>Portal: Selects income from CHOICES pill
+    Portal->>API: POST {message: "₹12–20 lakhs"}
+    API->>Regex: extractFieldsFromMessage()
+    Regex-->>API: {annual_income: 1600000}
+    API->>DB: UPDATE lead {annual_income} immediately
 
-    Note over U,DB: Phase 4 — Analysis Generation
-    API->>DB: fetch lead profile + all extracted_data
-    API->>Claude: analysis prompt + lead context
-    Claude-->>API: {coverage_gaps, savings, risk_flags, recommendation}
-    API->>DB: save analysis
-    API->>DB: update lead status → completed
-    API-->>Chat: notify dashboard
+    Note over U,Broker: Phase 3 — Qualification
+    API->>DB: UPDATE lead {status: qualified, score: X}
+    DB->>Broker: Realtime postgres_changes UPDATE → dashboard live-updates
+    Broker->>Broker: LeadCard shows #0003 ticket + score
+
+    Note over U,Broker: Phase 4 — Document Upload
+    U->>Portal: Uploads existing policy PDF
+    Portal->>API: POST /api/documents {file, leadId}
+    API->>DB: INSERT document (status: processing)
+    API->>API: pdf-parse extracts text layer
+    API->>Groq: extraction prompt (Claude fallback if needed)
+    Groq-->>API: {policy_type, sum_insured, exclusions, renewal_date, ...}
+    API->>DB: INSERT extracted_data
+    API->>DB: UPDATE lead {status: processing}
+    DB->>Broker: Realtime push → properties panel refreshes live
+
+    Note over U,Broker: Phase 5 — Analysis Generation
+    Broker->>API: POST /api/analysis {leadId}
+    API->>DB: fetch lead profile + all extracted_data + conversation
+    API->>Groq: Arjun Kapoor consultant persona + full client context
+    Groq-->>API: {coverage_gaps, risk_flags, recommendation, priority, confidence_score}
+    API->>DB: INSERT/UPDATE analyses
+    API->>DB: UPDATE lead {status: completed}
+
+    Note over U,Broker: Phase 6 — Follow-up Session (optional)
+    U->>Portal: Clicks "Question about existing" in new session modal
+    U->>Portal: Selects parent session from picker
+    Portal->>API: POST {sessionType: follow_up, parentLeadId: X}
+    API->>DB: INSERT lead {parent_lead_id: X, session_type: follow_up}
+    API-->>Portal: "Hi [Name]! I can see this is a follow-up on your health enquiry..."
+    DB->>Broker: New follow-up ticket appears on board with amber "Follow-up" badge

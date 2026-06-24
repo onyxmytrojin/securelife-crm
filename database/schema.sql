@@ -31,7 +31,15 @@ create table leads (
   concerns      text[],     -- all concerns: health, life, auto, property, loan, retirement, travel, other
   location      text,
 
-  notes         text
+  notes         text,
+
+  -- Multi-session / follow-up support
+  parent_lead_id uuid references leads(id) on delete set null,
+  session_type   text not null default 'new_inquiry'
+                 check (session_type in ('new_inquiry','follow_up')),
+
+  -- Sequential ticket numbers (human-readable, e.g. #0003)
+  ticket_number  integer unique
 );
 
 -- ─── CONVERSATIONS ──────────────────────────────────────────────────────────
@@ -129,6 +137,22 @@ $$;
 
 create trigger leads_updated_at before update on leads
   for each row execute procedure update_updated_at();
+
+-- Ticket number sequence — auto-assign on INSERT
+create sequence if not exists leads_ticket_number_seq start 1;
+
+create or replace function assign_ticket_number()
+returns trigger language plpgsql as $$
+begin
+  if new.ticket_number is null then
+    new.ticket_number = nextval('leads_ticket_number_seq');
+  end if;
+  return new;
+end;
+$$;
+
+create trigger leads_assign_ticket before insert on leads
+  for each row execute procedure assign_ticket_number();
 
 create trigger analyses_updated_at before update on analyses
   for each row execute procedure update_updated_at();

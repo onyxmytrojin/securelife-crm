@@ -76,7 +76,7 @@ Document ${i + 1}:
 
     const aiStart = Date.now()
     const rawJson = await generateJSON(
-      [{ role: 'user', content: `Analyse this insurance client and generate recommendations:\n\n${context}` }],
+      [{ role: 'user', content: `A new client file has landed on your desk. Review it thoroughly and produce your full advisory analysis. Do not hold back — the broker needs your honest, senior assessment to walk into this meeting prepared.\n\n${context}` }],
       ANALYSIS_SYSTEM_PROMPT
     )
     logger.info(ROUTE, `AI analysis generated in ${Date.now() - aiStart}ms`)
