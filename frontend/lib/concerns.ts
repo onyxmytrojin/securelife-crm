@@ -20,9 +20,15 @@ export interface ExtractedLeadFields {
 export function extractFieldsFromMessage(message: string): ExtractedLeadFields {
   const fields: ExtractedLeadFields = {}
 
-  // Phone: Indian mobile numbers (10 digits starting with 6-9), allow spaces/dashes
-  const phoneMatch = message.replace(/[\s\-]/g, '').match(/\b([6-9]\d{9})\b/)
-  if (phoneMatch) fields.phone = phoneMatch[1]
+  // Phone: Indian mobile (10 digits starting 6-9). Try plain match first, then condensed (strips spaces/dashes between digit groups only).
+  const phoneRaw = message.match(/\b([6-9]\d{9})\b/)
+  const phoneFmt = message.match(/([6-9]\d{2})[\s\-](\d{3})[\s\-](\d{4})/)
+    ?? message.match(/([6-9]\d{4})[\s\-](\d{5})/)
+  if (phoneRaw) {
+    fields.phone = phoneRaw[1]
+  } else if (phoneFmt) {
+    fields.phone = phoneFmt.slice(1).join('').replace(/\D/g, '')
+  }
 
   // Age: "I am 47", "i'm 30", "30 years old", "age 35", "aged 28", ", 47"
   const ageMatch =
