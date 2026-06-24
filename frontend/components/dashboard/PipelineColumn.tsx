@@ -16,10 +16,11 @@ const COLUMN_ACCENT: Record<LeadStatus, string> = {
   rejected:      '#f87171',
 }
 
-export function PipelineColumn({ status, leads, totalLeads }: {
+export function PipelineColumn({ status, leads, totalLeads, onDelete }: {
   status:     LeadStatus
   leads:      Lead[]
   totalLeads: number
+  onDelete?:  (id: string) => void
 }) {
   const accent                  = COLUMN_ACCENT[status]
   const { setNodeRef, isOver }  = useDroppable({ id: status })
@@ -95,7 +96,7 @@ export function PipelineColumn({ status, leads, totalLeads }: {
             {isOver ? '↓ Drop here' : 'No leads'}
           </div>
         ) : (
-          leads.map(lead => <LeadCard key={lead.id} lead={lead} />)
+          leads.map(lead => <LeadCard key={lead.id} lead={lead} onDelete={onDelete} />)
         )}
       </div>
     </div>

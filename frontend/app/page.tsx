@@ -145,7 +145,24 @@ export default function Dashboard() {
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchLeads() }, [fetchLeads])
+  useEffect(() => {
+    fetchLeads()
+    // Silently backfill concerns for existing leads that have none
+    void fetch('/api/leads/backfill-concerns', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.updated > 0) fetchLeads() })
+      .catch(() => {})
+  }, [fetchLeads])
+
+  const deleteLead = async (id: string) => {
+    if (!confirm('Delete this lead? This cannot be undone.')) return
+    setLeads(prev => prev.filter(l => l.id !== id))
+    await fetch('/api/leads', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+  }
 
   // Supabase Realtime — live lead updates
   const [realtimeConnected, setRealtimeConnected] = useState(false)
@@ -381,7 +398,7 @@ export default function Dashboard() {
                 <div className="h-full grid gap-2"
                   style={{ gridTemplateColumns: `repeat(${STATUSES.length}, minmax(0, 1fr))` }}>
                   {STATUSES.map(status => (
-                    <PipelineColumn key={status} status={status} leads={grouped[status] ?? []} totalLeads={filteredLeads.length} />
+                    <PipelineColumn key={status} status={status} leads={grouped[status] ?? []} totalLeads={filteredLeads.length} onDelete={deleteLead} />
                   ))}
                 </div>
                 <DragOverlay>

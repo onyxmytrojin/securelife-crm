@@ -42,6 +42,20 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data, { status: 201 })
 }
 
+export async function DELETE(req: NextRequest) {
+  const t = Date.now()
+  const { id } = await req.json()
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  const { error } = await supabaseAdmin.from('leads').delete().eq('id', id)
+  if (error) {
+    logger.error(ROUTE, `DELETE ${id} failed (${Date.now() - t}ms)`, { error: error.message })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+  revalidateTag('leads', 'max')
+  logger.info(ROUTE, `DELETE ${id} (${Date.now() - t}ms)`)
+  return NextResponse.json({ success: true })
+}
+
 export async function PATCH(req: NextRequest) {
   const t = Date.now()
   const body = await req.json()

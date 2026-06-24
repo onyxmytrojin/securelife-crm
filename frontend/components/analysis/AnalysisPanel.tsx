@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { Analysis } from '@/lib/types'
-import { AlertTriangle, TrendingDown, Zap, ArrowRight, Loader2, BarChart3 } from 'lucide-react'
+import { AlertTriangle, TrendingDown, Zap, ArrowRight, Loader2, BarChart3, RefreshCw } from 'lucide-react'
 
 const priorityColors: Record<string, string> = {
   low:    'bg-gray-50 dark:bg-[#1E2028] text-gray-600 dark:text-[#A1A7B3] border-gray-200 dark:border-[#2A2A2A]',
@@ -29,10 +29,20 @@ function Section({ icon: Icon, title, content, color }: {
   )
 }
 
-export function AnalysisPanel({ leadId, existing }: { leadId: string; existing: Analysis | null }) {
+export function AnalysisPanel({ leadId, existing, lastActivityAt }: {
+  leadId: string
+  existing: Analysis | null
+  lastActivityAt?: string | null
+}) {
   const [analysis, setAnalysis] = useState<Analysis | null>(existing)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
+
+  const isStale = !!(
+    analysis?.updated_at &&
+    lastActivityAt &&
+    new Date(lastActivityAt) > new Date(analysis.updated_at)
+  )
 
   const generate = async () => {
     setLoading(true)
@@ -72,6 +82,23 @@ export function AnalysisPanel({ leadId, existing }: { leadId: string; existing: 
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Stale warning — new conversation activity after last analysis */}
+      {isStale && (
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-amber-900/40 bg-amber-950/20 text-amber-400">
+          <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+          <p className="text-[12px] flex-1">
+            New conversation messages since this analysis was generated — refresh for an up-to-date view.
+          </p>
+          <button
+            onClick={() => void generate()}
+            disabled={loading}
+            className="text-[12px] font-semibold text-amber-300 hover:text-amber-200 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {loading ? 'Refreshing…' : 'Refresh now'}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-gray-800 dark:text-[#F7F8FA]">AI Analysis</span>

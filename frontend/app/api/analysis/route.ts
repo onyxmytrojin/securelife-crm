@@ -24,29 +24,43 @@ export async function POST(req: NextRequest) {
 
     logger.info(ROUTE, `POST generating analysis for lead:${leadId}`)
 
-    const [{ data: lead }, { data: extractions }] = await Promise.all([
+    const [{ data: lead }, { data: extractions }, { data: conversations }] = await Promise.all([
       supabaseAdmin.from('leads').select('*').eq('id', leadId).single(),
       supabaseAdmin.from('extracted_data').select('*').eq('lead_id', leadId),
+      supabaseAdmin.from('conversations').select('role, content').eq('lead_id', leadId).order('created_at', { ascending: true }),
     ])
 
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-    logger.info(ROUTE, `lead:${leadId} — ${extractions?.length ?? 0} docs, concerns: ${[...(lead.concerns ?? []), lead.primary_concern].filter(Boolean).join(', ')}`)
+    logger.info(ROUTE, `lead:${leadId} — ${extractions?.length ?? 0} docs, ${conversations?.length ?? 0} messages, concerns: ${[...(lead.concerns ?? []), lead.primary_concern].filter(Boolean).join(', ')}`)
 
     const concerns = Array.from(new Set([...(lead.concerns ?? []), lead.primary_concern].filter(Boolean)))
+
+    // Build conversation transcript (exclude system messages; cap at last 40 messages to stay within token budget)
+    const transcript = (conversations ?? [])
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-40)
+      .map(m => `${m.role === 'user' ? 'Client' : 'Aria (advisor)'}: ${m.content}`)
+      .join('\n')
+
     const context = `
-CLIENT PROFILE:
+CLIENT PROFILE (structured fields captured during chat):
 Name: ${lead.name ?? 'Unknown'}
 Age: ${lead.age ?? 'Unknown'}
 Occupation: ${lead.occupation ?? 'Unknown'}
 Annual Income: ${lead.annual_income ? `₹${lead.annual_income.toLocaleString()}` : 'Unknown'}
 Family Size: ${lead.family_size ?? 'Unknown'}
-Concerns: ${concerns.length ? concerns.join(', ') : 'Unknown'}
+Insurance Concerns: ${concerns.length ? concerns.join(', ') : 'Unknown'}
 Location: ${lead.location ?? 'Unknown'}
-Existing Coverage Summary: ${lead.existing_coverage ?? 'None mentioned'}
+Existing Coverage (self-reported): ${lead.existing_coverage ?? 'None mentioned'}
 
-EXISTING INSURANCE DOCUMENTS (${extractions?.length ?? 0} found):
-${(extractions ?? []).map((e, i) => `
+FULL CONVERSATION TRANSCRIPT (${(conversations ?? []).length} messages — use this to understand what the client actually said about their needs, situation, and concerns):
+${transcript || 'No conversation recorded yet.'}
+
+EXISTING INSURANCE DOCUMENTS (${extractions?.length ?? 0} uploaded and extracted):
+${(extractions ?? []).length === 0
+  ? 'No documents uploaded yet.'
+  : (extractions ?? []).map((e, i) => `
 Document ${i + 1}:
   Policy Type: ${e.policy_type ?? 'Unknown'}
   Provider: ${e.provider_name ?? 'Unknown'}

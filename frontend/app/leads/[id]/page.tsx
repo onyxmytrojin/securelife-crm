@@ -13,7 +13,7 @@ import { computeScore } from '@/lib/scoring'
 import { getUrgency } from '@/lib/urgency'
 import { formatLeadConcerns } from '@/lib/lead-utils'
 import type { LeadWithDetails, LeadStatus } from '@/lib/types'
-import { ArrowLeft, MessageSquare, FileText, BarChart3, ChevronDown, Check, ChevronRight, Info } from 'lucide-react'
+import { ArrowLeft, MessageSquare, FileText, BarChart3, ChevronDown, Check, ChevronRight, Info, Trash2 } from 'lucide-react'
 
 const ALL_STATUSES: LeadStatus[] = ['new', 'chatting', 'qualified', 'awaiting_docs', 'processing', 'completed', 'rejected']
 
@@ -103,9 +103,10 @@ function ScoreBreakdownPanel({ lead }: { lead: LeadWithDetails }) {
 export default function LeadDetail() {
   const { id }     = useParams<{ id: string }>()
   const router     = useRouter()
-  const [lead, setLead]         = useState<LeadWithDetails | null>(null)
-  const [loading, setLoading]   = useState(true)
+  const [lead, setLead]             = useState<LeadWithDetails | null>(null)
+  const [loading, setLoading]       = useState(true)
   const [statusOpen, setStatusOpen] = useState(false)
+  const [lastActivityAt, setLastActivityAt] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -127,11 +128,49 @@ export default function LeadDetail() {
       ])
     if (leadData) {
       setLead({ ...leadData, conversations: convs ?? [], documents: docs ?? [], extracted_data: extractions ?? [], analysis: analysis ?? null })
+      // Track the latest conversation message time for stale-analysis detection
+      const latest = (convs ?? []).at(-1)?.created_at ?? null
+      setLastActivityAt(latest)
     }
     setLoading(false)
   }, [id])
 
   useEffect(() => { fetchLead() }, [fetchLead])
+
+  // Realtime: watch for new conversation messages on this lead
+  useEffect(() => {
+    const channel = supabase
+      .channel(`conv-${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'conversations', filter: `lead_id=eq.${id}` },
+        (payload: { new: Record<string, unknown> }) => {
+          const newMsg = payload.new
+          const msgTime = newMsg.created_at as string | undefined
+          if (msgTime) setLastActivityAt(msgTime)
+          // Append to conversation list so the transcript tab updates live too
+          setLead(prev => {
+            if (!prev) return prev
+            const conv = newMsg as unknown as import('@/lib/types').Conversation
+            const already = prev.conversations?.some(c => c.id === conv.id)
+            if (already) return prev
+            return { ...prev, conversations: [...(prev.conversations ?? []), conv] }
+          })
+        }
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [id, supabase])
+
+  const deleteLead = async () => {
+    if (!confirm('Delete this lead permanently? This cannot be undone.')) return
+    await fetch('/api/leads', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    router.push('/')
+  }
 
   const changeStatus = async (newStatus: LeadStatus) => {
     if (!lead || lead.status === newStatus) return
@@ -181,7 +220,7 @@ export default function LeadDetail() {
           <ChevronRight className="w-3 h-3 text-[#3A3A3A]" />
           <span className="text-[13px] text-[#A0A7B3] font-medium">{lead.name ?? 'Lead'}</span>
 
-          {/* Quick status change */}
+          {/* Quick status change + delete */}
           <div className="flex items-center gap-2 ml-auto">
             {lead.status === 'new' && (
               <button onClick={() => changeStatus('chatting')}
@@ -207,6 +246,13 @@ export default function LeadDetail() {
                 Complete →
               </button>
             )}
+            <button
+              onClick={() => void deleteLead()}
+              title="Delete lead"
+              className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.06] text-[#6B7280] hover:border-red-900/60 hover:text-red-400 hover:bg-red-950/20 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
@@ -363,7 +409,7 @@ export default function LeadDetail() {
                   : <p className="text-[13px] text-[#6B7280] text-center py-6">No documents uploaded yet</p>}
               </TabsContent>
               <TabsContent value="analysis" className="flex-1 overflow-y-auto m-0 px-6 py-4">
-                <AnalysisPanel leadId={id} existing={lead.analysis ?? null} />
+                <AnalysisPanel leadId={id} existing={lead.analysis ?? null} lastActivityAt={lastActivityAt} />
               </TabsContent>
               <TabsContent value="score"    className="flex-1 overflow-y-auto m-0 px-6 py-6">
                 <ScoreBreakdownPanel lead={lead} />

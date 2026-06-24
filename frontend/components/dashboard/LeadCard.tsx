@@ -1,4 +1,6 @@
 'use client'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import type { Lead, LeadStatus } from '@/lib/types'
@@ -7,6 +9,7 @@ import { computeScore } from '@/lib/scoring'
 import { getUrgency } from '@/lib/urgency'
 import { getLeadConcerns, formatLeadConcerns } from '@/lib/lead-utils'
 import { StatusIcon } from '@/components/ui/status-icon'
+import { Trash2, ExternalLink } from 'lucide-react'
 
 export const STALE_HOURS: Partial<Record<LeadStatus, number>> = {
   new: 24, qualified: 48, awaiting_docs: 72, processing: 24,
@@ -38,11 +41,22 @@ export function getStaleness(lead: Lead) {
   return { level: null as null, hoursStale: 0 }
 }
 
-export function LeadCard({ lead }: { lead: Lead }) {
+export function LeadCard({ lead, onDelete }: { lead: Lead; onDelete?: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id:   lead.id,
     data: { status: lead.status },
   })
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menu) return
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menu])
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -61,7 +75,10 @@ export function LeadCard({ lead }: { lead: Lead }) {
     urgency.level === 'P2' ? 'bg-amber-400' : 'bg-emerald-400'
 
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+    <div
+      ref={setNodeRef} style={style} {...listeners} {...attributes}
+      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }) }}
+    >
       <Link href={`/leads/${lead.id}`} onClick={e => isDragging && e.preventDefault()}>
         <div className="
           bg-[#111317] border border-white/[0.07] rounded-xl select-none overflow-hidden
@@ -119,6 +136,31 @@ export function LeadCard({ lead }: { lead: Lead }) {
           </div>
         </div>
       </Link>
+
+      {/* Right-click context menu */}
+      {menu && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 9999 }}
+          className="bg-[#16181D] border border-white/[0.08] rounded-xl py-1 min-w-[160px] shadow-2xl
+            animate-in fade-in-0 zoom-in-95 duration-100"
+        >
+          <button
+            onClick={e => { e.stopPropagation(); setMenu(null); window.location.href = `/leads/${lead.id}` }}
+            className="w-full flex items-center gap-2.5 px-3 h-8 text-[13px] text-[#A0A7B3] hover:bg-[#1C2026] transition-colors text-left"
+          >
+            <ExternalLink className="w-3.5 h-3.5 shrink-0" />Open lead
+          </button>
+          <div className="border-t border-white/[0.05] my-1" />
+          <button
+            onClick={e => { e.stopPropagation(); setMenu(null); onDelete?.(lead.id) }}
+            className="w-full flex items-center gap-2.5 px-3 h-8 text-[13px] text-red-400 hover:bg-red-950/30 transition-colors text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />Delete lead
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
