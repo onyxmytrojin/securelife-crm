@@ -143,8 +143,14 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
   }, [])
 
   useEffect(() => {
-    if (leadId) { setCurrentLeadId(leadId); loadHistory(leadId) }
-  }, [leadId, loadHistory])
+    if (leadId) {
+      setCurrentLeadId(leadId)
+      loadHistory(leadId)
+    } else {
+      setCurrentLeadId(null)
+      setMessages([{ role: 'assistant', content: welcomeMessage ?? buildChatWelcome(userProfile?.name ?? null) }])
+    }
+  }, [leadId, loadHistory, welcomeMessage, userProfile?.name])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
