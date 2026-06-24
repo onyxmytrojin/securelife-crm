@@ -19,6 +19,9 @@ interface Props {
   onLeadCreated: (id: string) => void
   onReply?: () => void
   disabled?: boolean
+  parentLeadId?: string | null
+  sessionType?: 'new_inquiry' | 'follow_up' | null
+  welcomeMessage?: string
 }
 
 function normalizeQuotes(s: string) {
@@ -43,13 +46,14 @@ function parseChoices(content: string): { text: string; choices: string[]; multi
   }
 }
 
-export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabled = false }: Props) {
+export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabled = false, parentLeadId, sessionType, welcomeMessage }: Props) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: buildChatWelcome(null) }
+    { role: 'assistant', content: welcomeMessage ?? buildChatWelcome(null) }
   ])
 
   // Update welcome message once profile loads (async) — only if chat hasn't started
   useEffect(() => {
+    if (welcomeMessage) return // Follow-up sessions have a fixed welcome
     if (!userProfile?.name) return
     setMessages(prev => {
       if (prev.length === 1 && prev[0].role === 'assistant') {
@@ -57,7 +61,7 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
       }
       return prev
     })
-  }, [userProfile?.name])
+  }, [userProfile?.name, welcomeMessage])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -148,6 +152,8 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
           leadId: currentLeadId,
           documentContext: hasAttachment ? attachment!.extractedSummary : undefined,
           userProfile: userProfile ?? undefined,
+          parentLeadId: parentLeadId ?? undefined,
+          sessionType: sessionType ?? undefined,
         }),
       })
       const data = await res.json()
@@ -263,7 +269,7 @@ export function ChatWindow({ leadId, userProfile, onLeadCreated, onReply, disabl
 
             {loading && (
               <div className="flex items-end gap-2">
-                <div className="w-7 h-7 rounded-full bg-[#5E6AD2] text-white flex items-center justify-center text-[11px] font-bold shrink-0">P</div>
+                <div className="w-7 h-7 rounded-full bg-[#5E6AD2] text-white flex items-center justify-center text-[11px] font-bold shrink-0">A</div>
                 <div className="bg-[#1E2028] rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center">
                   {[0, 1, 2].map(i => (
                     <div key={i} className="w-1.5 h-1.5 bg-[#5E6AD2] rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />

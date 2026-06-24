@@ -9,6 +9,7 @@ const base: Lead = {
   age: null, occupation: null, annual_income: null,
   family_size: null, existing_coverage: null,
   primary_concern: null, concerns: null, location: null, notes: null,
+  parent_lead_id: null, session_type: null,
 }
 
 describe('getLeadConcerns', () => {

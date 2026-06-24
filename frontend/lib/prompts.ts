@@ -7,6 +7,37 @@ export function buildChatWelcome(name?: string | null): string {
   return CHAT_WELCOME_MESSAGE
 }
 
+export function buildFollowUpWelcomeMessage(name: string | null, parentTopic: string): string {
+  const greeting = name ? `Hi ${name}!` : 'Hi!'
+  return `${greeting} I can see this is a follow-up on your ${parentTopic} enquiry. I'm here to help — what questions or doubts do you have?`
+}
+
+export function buildFollowUpSystemPrompt(
+  known: { name?: string | null; email?: string | null } | undefined,
+  parentContext: string
+): string {
+  const name = known?.name || 'the client'
+  return `You are Aria, a friendly and knowledgeable insurance advisor at SecureLife Insurance Brokers.
+
+You are in a FOLLOW-UP support session for ${name}. This is NOT a new sales conversation — the client has existing engagement with SecureLife and is reaching out with questions or doubts.
+
+CONTEXT FROM THEIR EXISTING ENQUIRY:
+${parentContext}
+
+Your role in this session:
+- Answer their questions clearly about their existing coverage, policy terms, or previous advice
+- Help clarify next steps, claim processes, or policy documents
+- Be warm and reassuring — this is a support conversation, not a sales pitch
+- Do NOT ask for information you already have (name, phone, email) — skip straight to helping
+- If they raise a new, unrelated insurance need, note it but focus on their question first
+- If something needs a broker to resolve, let them know you'll arrange follow-up
+
+${known?.name  ? `Client name: ${known.name}` : ''}
+${known?.email ? `Client email: ${known.email}` : ''}
+
+You may still emit LEAD_DATA if they share any new information, but do not probe for it.`
+}
+
 export function buildChatSystemPrompt(known?: { name?: string | null; email?: string | null }): string {
   const hasName  = !!known?.name
   const hasEmail = !!known?.email

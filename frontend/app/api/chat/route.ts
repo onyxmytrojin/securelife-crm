@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidateTag } from 'next/cache'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { chat, type Message } from '@/lib/ai'
-import { buildChatSystemPrompt, CHAT_WELCOME_MESSAGE } from '@/lib/prompts'
+import {
+  buildChatSystemPrompt,
+  buildFollowUpSystemPrompt,
+  buildFollowUpWelcomeMessage,
+  CHAT_WELCOME_MESSAGE,
+} from '@/lib/prompts'
 import { logger } from '@/lib/logger'
 import { redis, chatRatelimit } from '@/lib/redis'
 import { extractConcernsFromMessage } from '@/lib/concerns'
@@ -21,8 +26,10 @@ export async function POST(req: NextRequest) {
     }
     logger.debug(ROUTE, `ip:${ip} remaining quota: ${remaining}/20`)
 
-    const { message, leadId, documentContext, userProfile } = await req.json()
+    const { message, leadId, documentContext, userProfile, parentLeadId, sessionType } = await req.json()
     if (!message?.trim()) return NextResponse.json({ error: 'Message required' }, { status: 400 })
+
+    const isFollowUp = sessionType === 'follow_up' && !!parentLeadId
 
     // Get or create lead
     let currentLeadId = leadId
@@ -30,6 +37,8 @@ export async function POST(req: NextRequest) {
       const seedData: Record<string, unknown> = { status: 'chatting', source: 'chatbot' }
       if (userProfile?.name)  seedData.name  = userProfile.name
       if (userProfile?.email) seedData.email = userProfile.email
+      if (parentLeadId)       seedData.parent_lead_id = parentLeadId
+      if (sessionType)        seedData.session_type   = sessionType
 
       const { data, error } = await supabaseAdmin
         .from('leads')
@@ -39,12 +48,25 @@ export async function POST(req: NextRequest) {
       if (error) throw error
       currentLeadId = data.id
       revalidateTag('leads', 'max')
-      logger.info(ROUTE, `new lead created ${currentLeadId}`, { seeded: Object.keys(seedData) })
+      logger.info(ROUTE, `new lead created ${currentLeadId}`, { seeded: Object.keys(seedData), isFollowUp })
 
+      // Choose welcome message based on session type
+      let welcomeContent = CHAT_WELCOME_MESSAGE
+      if (isFollowUp) {
+        const { data: parentLead } = await supabaseAdmin
+          .from('leads')
+          .select('name, primary_concern, concerns')
+          .eq('id', parentLeadId)
+          .single()
+        const topic = parentLead?.concerns?.slice(0, 2).join(' & ')
+          || parentLead?.primary_concern
+          || 'insurance'
+        welcomeContent = buildFollowUpWelcomeMessage(userProfile?.name ?? null, topic)
+      }
       await supabaseAdmin.from('conversations').insert({
         lead_id: currentLeadId,
         role: 'assistant',
-        content: CHAT_WELCOME_MESSAGE,
+        content: welcomeContent,
       })
     }
 
@@ -104,9 +126,24 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Call AI — inject known profile so it skips asking for name/email
+    // Call AI — use follow-up prompt if this is a support session
+    let systemPrompt = buildChatSystemPrompt(userProfile)
+    if (isFollowUp) {
+      const { data: parentLead } = await supabaseAdmin
+        .from('leads')
+        .select('name, primary_concern, concerns, status, updated_at')
+        .eq('id', parentLeadId)
+        .single()
+      const topic = parentLead?.concerns?.join(', ') || parentLead?.primary_concern || 'insurance'
+      const parentContext = [
+        `Topic: ${topic}`,
+        parentLead?.status ? `Status: ${parentLead.status}` : null,
+        parentLead?.updated_at ? `Last updated: ${new Date(parentLead.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : null,
+      ].filter(Boolean).join('\n')
+      systemPrompt = buildFollowUpSystemPrompt(userProfile, parentContext)
+    }
     const aiStart = Date.now()
-    const reply = await chat(messages, buildChatSystemPrompt(userProfile))
+    const reply = await chat(messages, systemPrompt)
     logger.info(ROUTE, `AI replied in ${Date.now() - aiStart}ms (${reply.length} chars)`)
 
     // Parse LEAD_DATA if present and update lead
