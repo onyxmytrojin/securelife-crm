@@ -14,6 +14,43 @@ import { extractConcernsFromMessage, extractFieldsFromMessage } from '@/lib/conc
 
 const ROUTE = '/api/chat'
 
+const PROFILE_KEYS = ['name', 'phone', 'age', 'occupation', 'annual_income', 'family_size', 'location', 'existing_coverage'] as const
+
+async function syncProfileToSiblings(
+  email: string,
+  currentLeadId: string,
+  profileFields: Record<string, unknown>
+) {
+  const hasProfileData = PROFILE_KEYS.some(k => profileFields[k] != null && profileFields[k] !== '')
+  const hasConcerns = Array.isArray(profileFields.concerns) && (profileFields.concerns as string[]).length > 0
+  if (!hasProfileData && !hasConcerns) return
+
+  const { data: siblings } = await supabaseAdmin
+    .from('leads')
+    .select('id, ' + PROFILE_KEYS.join(', ') + ', concerns, primary_concern')
+    .eq('email', email)
+    .neq('id', currentLeadId)
+    .neq('status', 'rejected')
+
+  for (const sibling of siblings ?? []) {
+    const sibUpdate: Record<string, unknown> = {}
+    for (const key of PROFILE_KEYS) {
+      if (profileFields[key] != null && profileFields[key] !== '' && !(sibling as Record<string, unknown>)[key]) {
+        sibUpdate[key] = profileFields[key]
+      }
+    }
+    if (hasConcerns) {
+      const incoming = profileFields.concerns as string[]
+      const merged = [...new Set([...(sibling.concerns ?? []), ...incoming])]
+      if (merged.length > (sibling.concerns ?? []).length) sibUpdate.concerns = merged
+      if (!sibling.primary_concern && merged.length > 0) sibUpdate.primary_concern = profileFields.primary_concern as string || merged[0]
+    }
+    if (Object.keys(sibUpdate).length > 0) {
+      await supabaseAdmin.from('leads').update(sibUpdate).eq('id', sibling.id)
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const t = Date.now()
   try {
@@ -111,6 +148,8 @@ export async function POST(req: NextRequest) {
       if (Object.keys(immediateUpdate).length > 0) {
         await supabaseAdmin.from('leads').update(immediateUpdate).eq('id', currentLeadId)
         logger.info(ROUTE, `lead:${currentLeadId} fields extracted from message`, { concerns: msgConcerns, fields: msgFields })
+        const syncEmail = userProfile?.email
+        if (syncEmail) await syncProfileToSiblings(syncEmail, currentLeadId, immediateUpdate)
       }
     }
 
@@ -202,6 +241,8 @@ export async function POST(req: NextRequest) {
           )
           await supabaseAdmin.from('leads').update(updates).eq('id', currentLeadId)
           logger.info(ROUTE, `lead:${currentLeadId} updated`, { fields: Object.keys(updates), qualified: updates.status === 'qualified' })
+          const syncEmail = (updates.email as string) || userProfile?.email
+          if (syncEmail) await syncProfileToSiblings(syncEmail, currentLeadId, updates)
         }
       } catch {
         logger.warn(ROUTE, `lead:${currentLeadId} LEAD_DATA parse failed — malformed JSON from AI`)

@@ -137,10 +137,10 @@ export default function LeadDetail() {
 
   useEffect(() => { fetchLead() }, [fetchLead])
 
-  // Realtime: watch for new conversation messages on this lead
+  // Realtime: watch for new conversation messages + lead profile updates
   useEffect(() => {
     const channel = supabase
-      .channel(`conv-${id}`)
+      .channel(`lead-detail-${id}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'conversations', filter: `lead_id=eq.${id}` },
@@ -148,7 +148,6 @@ export default function LeadDetail() {
           const newMsg = payload.new
           const msgTime = newMsg.created_at as string | undefined
           if (msgTime) setLastActivityAt(msgTime)
-          // Append to conversation list so the transcript tab updates live too
           setLead(prev => {
             if (!prev) return prev
             const conv = newMsg as unknown as import('@/lib/types').Conversation
@@ -156,6 +155,14 @@ export default function LeadDetail() {
             if (already) return prev
             return { ...prev, conversations: [...(prev.conversations ?? []), conv] }
           })
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${id}` },
+        (payload: { new: Record<string, unknown> }) => {
+          // Merge incoming field updates into lead state — properties panel updates instantly
+          setLead(prev => prev ? { ...prev, ...(payload.new as Partial<LeadWithDetails>) } : prev)
         }
       )
       .subscribe()
