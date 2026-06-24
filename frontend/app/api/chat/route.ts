@@ -11,6 +11,7 @@ import {
 import { logger } from '@/lib/logger'
 import { redis, chatRatelimit } from '@/lib/redis'
 import { extractConcernsFromMessage, extractFieldsFromMessage } from '@/lib/concerns'
+import { notifyBrokerQualified } from '@/lib/notifications'
 
 const ROUTE = '/api/chat'
 
@@ -246,8 +247,11 @@ export async function POST(req: NextRequest) {
             100,
             Object.values(updates).filter(v => v !== null && v !== undefined && v !== '').length * 10
           )
-          await supabaseAdmin.from('leads').update(updates).eq('id', currentLeadId)
+          const { data: updatedLead } = await supabaseAdmin.from('leads').update(updates).eq('id', currentLeadId).select().single()
           logger.info(ROUTE, `lead:${currentLeadId} updated`, { fields: Object.keys(updates), qualified: updates.status === 'qualified' })
+          if (updates.status === 'qualified' && updatedLead) {
+            void notifyBrokerQualified(updatedLead).catch(() => {})
+          }
           const syncEmail = (updates.email as string) || userProfile?.email
           if (syncEmail) await syncProfileToSiblings(syncEmail, currentLeadId, updates)
         }

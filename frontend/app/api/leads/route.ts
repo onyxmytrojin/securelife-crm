@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidateTag } from 'next/cache'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { logger } from '@/lib/logger'
+import { notifyBrokerQualified, notifyCustomerDocsRequested } from '@/lib/notifications'
 
 const ROUTE = '/api/leads'
 
@@ -62,6 +63,11 @@ export async function PATCH(req: NextRequest) {
   const { id, ...updates } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
+  // Fetch current status before update so we know if it changed
+  const { data: before } = await supabaseAdmin
+    .from('leads').select('status').eq('id', id).single()
+  const prevStatus = before?.status as string | undefined
+
   const { data, error } = await supabaseAdmin
     .from('leads')
     .update(updates)
@@ -75,5 +81,17 @@ export async function PATCH(req: NextRequest) {
   }
   revalidateTag('leads', 'max')
   logger.info(ROUTE, `PATCH ${id} → ${JSON.stringify(updates)} (${Date.now() - t}ms)`)
+
+  // Fire-and-forget email notifications on meaningful status transitions
+  const newStatus = updates.status as string | undefined
+  if (newStatus && newStatus !== prevStatus) {
+    if (newStatus === 'qualified') {
+      void notifyBrokerQualified(data).catch(() => {})
+    }
+    if (newStatus === 'awaiting_docs') {
+      void notifyCustomerDocsRequested(data).catch(() => {})
+    }
+  }
+
   return NextResponse.json(data)
 }

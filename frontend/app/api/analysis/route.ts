@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateJSON } from '@/lib/ai'
 import { ANALYSIS_SYSTEM_PROMPT } from '@/lib/prompts'
 import { logger } from '@/lib/logger'
+import { notifyBrokerAnalysisReady } from '@/lib/notifications'
 import { z } from 'zod'
 
 const ROUTE = '/api/analysis'
@@ -111,6 +112,9 @@ Document ${i + 1}:
     if (error) throw error
 
     await supabaseAdmin.from('leads').update({ status: 'completed' }).eq('id', leadId)
+
+    // Fire-and-forget broker notification
+    void notifyBrokerAnalysisReady(lead, analysisData).catch(() => {})
 
     logger.info(ROUTE, `lead:${leadId} analysis ${existing ? 'updated' : 'created'} priority:${analysisData.priority} confidence:${analysisData.confidence_score}% (${Date.now() - t}ms total)`)
     return NextResponse.json(analysis)
