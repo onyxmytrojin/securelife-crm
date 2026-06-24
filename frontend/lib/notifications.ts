@@ -11,13 +11,21 @@ const FROM = 'SecureLife CRM <onboarding@resend.dev>'
 // ─── Internal send ────────────────────────────────────────────────────────────
 
 async function sendEmail(apiKey: string, to: string, subject: string, html: string) {
-  if (!apiKey || !to) return
+  console.log('[notifications] sendEmail called — to:', to, '| apiKey set:', !!apiKey, '| apiKey prefix:', apiKey.slice(0, 8))
+  if (!apiKey || !to) {
+    console.warn('[notifications] sendEmail skipped — missing apiKey or to')
+    return
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: FROM, to: [to], subject, html }),
   })
-  if (!res.ok) console.error('[notifications] Resend error:', await res.text())
+  if (!res.ok) {
+    console.error('[notifications] Resend error:', await res.text())
+  } else {
+    console.log('[notifications] Email sent OK — subject:', subject)
+  }
 }
 
 // ─── Shared template shell ────────────────────────────────────────────────────
