@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateJSON } from '@/lib/ai'
+import { logger } from '@/lib/logger'
 import { z } from 'zod'
+
+const ROUTE = '/api/conversations/summary'
 
 const SummarySchema = z.object({
   headline: z.string(),
@@ -12,6 +15,7 @@ const SummarySchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  const t = Date.now()
   const { leadId } = await req.json()
   if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 })
 
@@ -23,8 +27,11 @@ export async function POST(req: NextRequest) {
     .order('created_at', { ascending: true })
 
   if (!conversations?.length) {
+    logger.warn(ROUTE, `lead:${leadId} — no conversation found`)
     return NextResponse.json({ error: 'No conversation found' }, { status: 404 })
   }
+
+  logger.info(ROUTE, `POST lead:${leadId} — summarising ${conversations.length} messages`)
 
   const transcript = conversations
     .map(m => `${m.role === 'user' ? 'Client' : 'Priya (AI)'}: ${m.content}`)
@@ -43,15 +50,16 @@ Return JSON with:
 - next_step: what the broker should do next`
 
   try {
+    const aiStart = Date.now()
     const raw = await generateJSON([{ role: 'user', content: prompt }],
       'You are a concise insurance CRM assistant. Summarise conversations for brokers.')
-    // Strip markdown fences if the model wrapped the JSON
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
     const parsed = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned
     const summary = SummarySchema.parse(parsed)
+    logger.info(ROUTE, `lead:${leadId} summary done in ${Date.now() - aiStart}ms (${Date.now() - t}ms total)`)
     return NextResponse.json(summary)
   } catch (err) {
-    console.error('[summary] failed:', err)
+    logger.error(ROUTE, `lead:${leadId} summary failed (${Date.now() - t}ms)`, { error: String(err) })
     return NextResponse.json({ error: 'Summary generation failed' }, { status: 500 })
   }
 }

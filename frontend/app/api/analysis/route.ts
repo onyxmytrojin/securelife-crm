@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateJSON } from '@/lib/ai'
 import { ANALYSIS_SYSTEM_PROMPT } from '@/lib/prompts'
+import { logger } from '@/lib/logger'
 import { z } from 'zod'
+
+const ROUTE = '/api/analysis'
 
 const AnalysisSchema = z.object({
   coverage_gaps: z.string(),
@@ -14,17 +17,21 @@ const AnalysisSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  const t = Date.now()
   try {
     const { leadId } = await req.json()
     if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 })
 
-    // Fetch lead + all extracted data
+    logger.info(ROUTE, `POST generating analysis for lead:${leadId}`)
+
     const [{ data: lead }, { data: extractions }] = await Promise.all([
       supabaseAdmin.from('leads').select('*').eq('id', leadId).single(),
       supabaseAdmin.from('extracted_data').select('*').eq('lead_id', leadId),
     ])
 
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+    logger.info(ROUTE, `lead:${leadId} — ${extractions?.length ?? 0} docs, concerns: ${[...(lead.concerns ?? []), lead.primary_concern].filter(Boolean).join(', ')}`)
 
     const concerns = Array.from(new Set([...(lead.concerns ?? []), lead.primary_concern].filter(Boolean)))
     const context = `
@@ -53,19 +60,21 @@ Document ${i + 1}:
 `).join('\n')}
 `.trim()
 
+    const aiStart = Date.now()
     const rawJson = await generateJSON(
       [{ role: 'user', content: `Analyse this insurance client and generate recommendations:\n\n${context}` }],
       ANALYSIS_SYSTEM_PROMPT
     )
+    logger.info(ROUTE, `AI analysis generated in ${Date.now() - aiStart}ms`)
 
     let analysisData: z.infer<typeof AnalysisSchema>
     try {
       analysisData = AnalysisSchema.parse(JSON.parse(rawJson))
     } catch {
+      logger.error(ROUTE, `lead:${leadId} — AI returned invalid analysis format`)
       return NextResponse.json({ error: 'AI returned invalid analysis format' }, { status: 500 })
     }
 
-    // Upsert analysis (one per lead)
     const { data: existing } = await supabaseAdmin
       .from('analyses')
       .select('id')
@@ -87,12 +96,12 @@ Document ${i + 1}:
 
     if (error) throw error
 
-    // Mark lead as completed
     await supabaseAdmin.from('leads').update({ status: 'completed' }).eq('id', leadId)
 
+    logger.info(ROUTE, `lead:${leadId} analysis ${existing ? 'updated' : 'created'} priority:${analysisData.priority} confidence:${analysisData.confidence_score}% (${Date.now() - t}ms total)`)
     return NextResponse.json(analysis)
   } catch (err) {
-    console.error('[/api/analysis]', err)
+    logger.error(ROUTE, `POST failed (${Date.now() - t}ms)`, { error: String(err) })
     return NextResponse.json({ error: 'Analysis generation failed' }, { status: 500 })
   }
 }
