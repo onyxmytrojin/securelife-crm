@@ -92,9 +92,12 @@ export function Sidebar({
       {/* Logo row */}
       <div className="h-11 flex items-center px-3 border-b border-white/[0.05] shrink-0">
         <div
-          className="w-6 h-6 rounded-md bg-[#5E6AD2] flex items-center justify-center text-white text-[11px] font-bold shrink-0 cursor-pointer"
+          className="w-6 h-6 rounded-md overflow-hidden shrink-0 cursor-pointer"
           onClick={() => router.push('/')}
-        >S</div>
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/companylogo.png" alt="SecureLife" className="block w-full h-full object-contain bg-white p-px" />
+        </div>
         {!collapsed && (
           <>
             <span className="ml-2.5 text-[13px] font-semibold text-[#F7F8FA] truncate flex-1">SecureLife CRM</span>
