@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+﻿import { describe, it, expect, vi, afterEach } from 'vitest'
 import { getUrgency } from '@/lib/urgency'
 import type { Lead } from '@/lib/types'
 
@@ -9,7 +9,7 @@ const base: Lead = {
   age: null, occupation: null, annual_income: null,
   family_size: null, existing_coverage: null,
   primary_concern: null, concerns: null, location: null, notes: null,
-  parent_lead_id: null, session_type: null,
+  parent_lead_id: null, session_type: null, ticket_number: null,
 }
 
 function hoursAgo(h: number): string {
@@ -18,7 +18,7 @@ function hoursAgo(h: number): string {
 
 afterEach(() => { vi.useRealTimers() })
 
-describe('getUrgency — returns null for non-SLA stages', () => {
+describe('getUrgency â€” returns null for non-SLA stages', () => {
   it('returns null for chatting', () => {
     expect(getUrgency({ ...base, status: 'chatting' })).toBeNull()
   })
@@ -32,7 +32,7 @@ describe('getUrgency — returns null for non-SLA stages', () => {
   })
 })
 
-describe('getUrgency — new (SLA 24h)', () => {
+describe('getUrgency â€” new (SLA 24h)', () => {
   it('P3 when well within SLA (2h in)', () => {
     const u = getUrgency({ ...base, status: 'new', updated_at: hoursAgo(2) })!
     expect(u.level).toBe('P3')
@@ -54,7 +54,7 @@ describe('getUrgency — new (SLA 24h)', () => {
   })
 })
 
-describe('getUrgency — qualified (SLA 48h)', () => {
+describe('getUrgency â€” qualified (SLA 48h)', () => {
   it('P3 at 10h (20% of 48h SLA)', () => {
     const u = getUrgency({ ...base, status: 'qualified', updated_at: hoursAgo(10) })!
     expect(u.level).toBe('P3')
@@ -76,7 +76,7 @@ describe('getUrgency — qualified (SLA 48h)', () => {
   })
 })
 
-describe('getUrgency — awaiting_docs (SLA 72h)', () => {
+describe('getUrgency â€” awaiting_docs (SLA 72h)', () => {
   it('P3 at 20h', () => {
     const u = getUrgency({ ...base, status: 'awaiting_docs', updated_at: hoursAgo(20) })!
     expect(u.level).toBe('P3')
@@ -88,7 +88,7 @@ describe('getUrgency — awaiting_docs (SLA 72h)', () => {
   })
 })
 
-describe('getUrgency — processing (SLA 24h)', () => {
+describe('getUrgency â€” processing (SLA 24h)', () => {
   it('P3 at 5h', () => {
     const u = getUrgency({ ...base, status: 'processing', updated_at: hoursAgo(5) })!
     expect(u.level).toBe('P3')
@@ -100,7 +100,7 @@ describe('getUrgency — processing (SLA 24h)', () => {
   })
 })
 
-describe('getUrgency — returned shape', () => {
+describe('getUrgency â€” returned shape', () => {
   it('includes all required fields', () => {
     const u = getUrgency({ ...base, status: 'new', updated_at: hoursAgo(5) })!
     expect(u).toMatchObject({
@@ -126,3 +126,4 @@ describe('getUrgency — returned shape', () => {
     expect(u.pctUsed).toBeCloseTo(0.5, 1)
   })
 })
+

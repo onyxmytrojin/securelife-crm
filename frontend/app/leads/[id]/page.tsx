@@ -218,7 +218,17 @@ export default function LeadDetail() {
             <ArrowLeft className="w-3.5 h-3.5" />Pipeline
           </button>
           <ChevronRight className="w-3 h-3 text-[#3A3A3A]" />
+          {lead.ticket_number != null && (
+            <span className="text-[12px] font-mono font-semibold text-[#4B5058]">
+              #{String(lead.ticket_number).padStart(4, '0')}
+            </span>
+          )}
           <span className="text-[13px] text-[#A0A7B3] font-medium">{lead.name ?? 'Lead'}</span>
+          {lead.session_type === 'follow_up' && (
+            <span className="text-[10px] font-semibold px-1.5 py-px rounded border border-amber-800/50 bg-amber-950/30 text-amber-400 uppercase tracking-wide">
+              Follow-up
+            </span>
+          )}
 
           {/* Quick status change + delete */}
           <div className="flex items-center gap-2 ml-auto">
@@ -263,7 +273,17 @@ export default function LeadDetail() {
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-[18px] font-semibold text-[#F7F8FA] mb-1">{lead.name ?? 'Unknown'}</h1>
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-[18px] font-semibold text-[#F7F8FA]">{lead.name ?? 'Unknown'}</h1>
+                {lead.ticket_number != null && (
+                  <span className="text-[12px] font-mono text-[#4B5058] mt-0.5">#{String(lead.ticket_number).padStart(4, '0')}</span>
+                )}
+                {lead.session_type === 'follow_up' && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-800/50 bg-amber-950/30 text-amber-400 uppercase tracking-wide mt-0.5">
+                    Follow-up
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-3 flex-wrap text-[13px] text-[#6B7280]">
                 {lead.email && <span>{lead.email}</span>}
                 {lead.phone && <span>{lead.phone}</span>}

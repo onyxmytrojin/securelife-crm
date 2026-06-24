@@ -67,14 +67,16 @@ function SessionItem({ session, index, total, isActive, onClick }: {
           : 'hover:bg-white/[0.04] border border-transparent'
       }`}
     >
-      <div className="flex items-center gap-2 mb-0.5">
+      <div className="flex items-center gap-1.5 mb-0.5">
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`} />
         <span className="text-[12px] font-medium text-[#A0A7B3] truncate flex-1">
-          Session #{total - index}
-          {session.session_type === 'follow_up' && (
-            <span className="ml-1 text-[10px] text-[#5E6AD2]">follow-up</span>
-          )}
+          {session.ticket_number != null
+            ? `#${String(session.ticket_number).padStart(4, '0')}`
+            : `Session #${total - index}`}
         </span>
+        {session.session_type === 'follow_up' && (
+          <span className="text-[9px] font-semibold px-1 py-px rounded border border-amber-800/40 bg-amber-950/30 text-amber-400 shrink-0">FU</span>
+        )}
       </div>
       <p className="text-[11px] text-[#6B7280] truncate pl-3.5">{topic}</p>
       <p className={`text-[11px] font-medium pl-3.5 mt-0.5 ${meta.color}`}>{meta.label}</p>
@@ -316,7 +318,16 @@ export default function CustomerChatPage() {
                         className="w-full text-left rounded-xl border border-white/[0.06] bg-[#111317] hover:border-[#5E6AD2]/40 px-4 py-3 transition-all"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-[13px] font-medium text-[#F7F8FA]">Session #{sessions.length - i}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-[#F7F8FA]">
+                              {s.ticket_number != null
+                                ? `#${String(s.ticket_number).padStart(4, '0')}`
+                                : `Session #${sessions.length - i}`}
+                            </span>
+                            {s.session_type === 'follow_up' && (
+                              <span className="text-[9px] font-semibold px-1 py-px rounded border border-amber-800/40 bg-amber-950/30 text-amber-400">FU</span>
+                            )}
+                          </div>
                           <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
                         </div>
                         <p className="text-[12px] text-[#6B7280] mt-0.5">{topic}</p>
@@ -576,10 +587,16 @@ export default function CustomerChatPage() {
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[13px] font-medium text-[#F7F8FA]">
-                            Session #{sessions.length - i}
-                            {s.session_type === 'follow_up' && <span className="ml-1.5 text-[11px] text-amber-400">follow-up</span>}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-[#F7F8FA]">
+                              {s.ticket_number != null
+                                ? `#${String(s.ticket_number).padStart(4, '0')}`
+                                : `Session #${sessions.length - i}`}
+                            </span>
+                            {s.session_type === 'follow_up' && (
+                              <span className="text-[9px] font-semibold px-1.5 py-px rounded border border-amber-800/50 bg-amber-950/30 text-amber-400 uppercase tracking-wide">Follow-up</span>
+                            )}
+                          </div>
                           <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
                         </div>
                         <p className="text-[12px] text-[#6B7280] mb-1">{topic}</p>

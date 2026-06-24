@@ -36,6 +36,7 @@ export interface Lead {
   notes: string | null
   parent_lead_id: string | null
   session_type: 'new_inquiry' | 'follow_up' | null
+  ticket_number: number | null
 }
 
 export interface Conversation {

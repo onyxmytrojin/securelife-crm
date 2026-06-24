@@ -86,6 +86,20 @@ export function LeadCard({ lead, onDelete }: { lead: Lead; onDelete?: (id: strin
           transition-all duration-150 shadow-none
         ">
           <div className="px-3 pt-2.5 pb-2 space-y-1.5">
+            {/* Row 0: ticket number + follow-up badge */}
+            <div className="flex items-center gap-1.5">
+              {lead.ticket_number != null && (
+                <span className="text-[10px] font-mono font-semibold text-[#4B5058]">
+                  #{String(lead.ticket_number).padStart(4, '0')}
+                </span>
+              )}
+              {lead.session_type === 'follow_up' && (
+                <span className="text-[9px] font-semibold px-1.5 py-px rounded border border-amber-800/50 bg-amber-950/30 text-amber-400 uppercase tracking-wide">
+                  Follow-up
+                </span>
+              )}
+            </div>
+
             {/* Row 1: status icon + name + urgency */}
             <div className="flex items-center gap-2 justify-between">
               <div className="flex items-center gap-1.5 min-w-0">

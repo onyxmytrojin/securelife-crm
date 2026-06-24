@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { computeScore } from '@/lib/scoring'
 import type { Lead } from '@/lib/types'
 
@@ -9,20 +9,20 @@ const base: Lead = {
   age: null, occupation: null, annual_income: null,
   family_size: null, existing_coverage: null,
   primary_concern: null, concerns: null, location: null, notes: null,
-  parent_lead_id: null, session_type: null,
+  parent_lead_id: null, session_type: null, ticket_number: null,
 }
 
 const fullLead: Lead = {
   ...base,
   name: 'Arjun Sharma', email: 'arjun@example.com', phone: '+91 98765 43210',
   age: 35, occupation: 'Software Engineer', annual_income: 1_500_000,
-  family_size: 3, location: 'Mumbai', existing_coverage: 'Term life ₹1Cr',
+  family_size: 3, location: 'Mumbai', existing_coverage: 'Term life â‚¹1Cr',
   primary_concern: 'health', concerns: ['health', 'life'],
   status: 'completed',
 }
 
-describe('computeScore — total range', () => {
-  it('returns 0–100 for a bare lead', () => {
+describe('computeScore â€” total range', () => {
+  it('returns 0â€“100 for a bare lead', () => {
     const { total } = computeScore(base)
     expect(total).toBeGreaterThanOrEqual(0)
     expect(total).toBeLessThanOrEqual(100)
@@ -37,7 +37,7 @@ describe('computeScore — total range', () => {
   })
 })
 
-describe('computeScore — grade thresholds', () => {
+describe('computeScore â€” grade thresholds', () => {
   it('grades F for empty lead', () => {
     expect(computeScore(base).grade).toBe('F')
   })
@@ -48,33 +48,33 @@ describe('computeScore — grade thresholds', () => {
   })
 })
 
-describe('computeScore — financial capacity factor', () => {
+describe('computeScore â€” financial capacity factor', () => {
   it('scores 0 financial when income is null', () => {
     const { factors } = computeScore(base)
     const f = factors.find(x => x.label === 'Financial Capacity')!
     expect(f.score).toBe(0)
   })
 
-  it('scores 5 for income below ₹3L', () => {
+  it('scores 5 for income below â‚¹3L', () => {
     const { factors } = computeScore({ ...base, annual_income: 100_000 })
     const f = factors.find(x => x.label === 'Financial Capacity')!
     expect(f.score).toBe(5)
   })
 
-  it('scores 25 for income above ₹50L', () => {
+  it('scores 25 for income above â‚¹50L', () => {
     const { factors } = computeScore({ ...base, annual_income: 6_000_000 })
     const f = factors.find(x => x.label === 'Financial Capacity')!
     expect(f.score).toBe(25)
   })
 
-  it('scores 15 for income ₹6–12L', () => {
+  it('scores 15 for income â‚¹6â€“12L', () => {
     const { factors } = computeScore({ ...base, annual_income: 800_000 })
     const f = factors.find(x => x.label === 'Financial Capacity')!
     expect(f.score).toBe(15)
   })
 })
 
-describe('computeScore — coverage need factor', () => {
+describe('computeScore â€” coverage need factor', () => {
   it('scores 0 with no concern and no existing coverage', () => {
     const { factors } = computeScore(base)
     const f = factors.find(x => x.label === 'Coverage Need Signal')!
@@ -100,7 +100,7 @@ describe('computeScore — coverage need factor', () => {
   })
 })
 
-describe('computeScore — engagement factor', () => {
+describe('computeScore â€” engagement factor', () => {
   it('scores 3 for new status', () => {
     const { factors } = computeScore({ ...base, status: 'new' })
     const f = factors.find(x => x.label === 'Engagement Depth')!
@@ -120,7 +120,7 @@ describe('computeScore — engagement factor', () => {
   })
 })
 
-describe('computeScore — document readiness factor', () => {
+describe('computeScore â€” document readiness factor', () => {
   it('scores 0 when no docs (new status)', () => {
     const { factors } = computeScore(base)
     const f = factors.find(x => x.label === 'Document Readiness')!
@@ -140,7 +140,7 @@ describe('computeScore — document readiness factor', () => {
   })
 })
 
-describe('computeScore — factors structure', () => {
+describe('computeScore â€” factors structure', () => {
   it('always returns exactly 5 factors', () => {
     expect(computeScore(base).factors).toHaveLength(5)
     expect(computeScore(fullLead).factors).toHaveLength(5)
@@ -159,3 +159,4 @@ describe('computeScore — factors structure', () => {
     expect(result.total).toBe(Math.min(100, sum))
   })
 })
+

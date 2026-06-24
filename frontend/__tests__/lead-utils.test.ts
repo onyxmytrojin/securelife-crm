@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { getLeadConcerns, formatLeadConcerns } from '@/lib/lead-utils'
 import type { Lead } from '@/lib/types'
 
@@ -9,7 +9,7 @@ const base: Lead = {
   age: null, occupation: null, annual_income: null,
   family_size: null, existing_coverage: null,
   primary_concern: null, concerns: null, location: null, notes: null,
-  parent_lead_id: null, session_type: null,
+  parent_lead_id: null, session_type: null, ticket_number: null,
 }
 
 describe('getLeadConcerns', () => {
@@ -66,3 +66,4 @@ describe('formatLeadConcerns', () => {
       .toBe('health, life +3')
   })
 })
+
