@@ -1,7 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Browser client — uses anon key, safe to use in client components
-export const supabase = createClient(url, anonKey)
+// Re-export the singleton browser client so all imports use one instance
+export { createClient } from '@/lib/supabase-browser'
+import { createClient } from '@/lib/supabase-browser'
+export const supabase = createClient()
