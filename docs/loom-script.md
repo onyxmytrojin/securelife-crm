@@ -1,297 +1,304 @@
 # SecureLife CRM — Loom Walkthrough Script
-# Full 12–15 minute recording guide
 
 ---
 
-## BEFORE YOU HIT RECORD — SETUP CHECKLIST
+## BEFORE YOU START
+[Open these tabs and keep them ready — do not show this list on screen]
 
-Open these tabs in your browser and keep them ready:
+- Tab 1 → securelife-crm.vercel.app/ — broker dashboard, logged in as shubhanmehrotra.teamedge@gmail.com / Broker123!
+- Tab 2 → securelife-crm.vercel.app/chat — customer portal, logged in as shubhanmehrotra@gmail.com
+- Tab 3 → gmail.com — shubhanmehrotra.teamedge@gmail.com inbox open (broker email)
+- Tab 4 → mermaid.live — architecture.mmd loaded
+- Tab 5 → mermaid.live — erd.mmd loaded
+- Tab 6 → mermaid.live — lead-flow.mmd loaded
+- VS Code → project root open, lib/prompts.ts visible in sidebar
 
-| Tab | URL | Who |
-|-----|-----|-----|
-| 1. Broker Dashboard | https://securelife-crm.vercel.app/ | Logged in as `shubhanmehrotra.teamedge@gmail.com` / `Broker123!` |
-| 2. Customer Chat | https://securelife-crm.vercel.app/chat | Logged in as `shubhanmehrotra@gmail.com` |
-| 3. Broker Gmail | gmail.com | `shubhanmehrotra.teamedge@gmail.com` — for incoming broker emails |
-| 4. Architecture diagram | Open `diagrams/architecture.mmd` in any Mermaid renderer (mermaid.live) |
-| 5. ERD | Open `diagrams/erd.mmd` in mermaid.live |
-| 6. Lead flow | Open `diagrams/lead-flow.mmd` in mermaid.live |
-
-Also open VS Code with the project root visible so you can show `lib/prompts.ts` and `lib/notifications.ts` briefly.
+[Start on the broker dashboard Tab 1. Make sure seed data is loaded so the pipeline looks full.]
 
 ---
 
-## SEGMENT 1 — INTRO (0:00 – 1:00)
+## SEGMENT 1 — INTRODUCTION (0:00 – 1:00)
+[Show the broker dashboard. Scroll slowly so the assessor can take it in.]
 
-**Show:** Broker dashboard at `/`
+So what I've built here is SecureLife CRM — it's an AI-powered insurance lead management system. The brief was to solve a real problem that insurance brokers face: the gap between when a customer first shows interest and when the broker actually has enough information to recommend a product. Traditionally that process takes two to three days of back-and-forth calls and emails. This system compresses it into a single automated flow.
 
-**Say:**
-> "Hi — I'm going to walk through SecureLife CRM, an AI-powered insurance lead management system I built for the BraindAI Senior AI Engineer assessment. The system has four core capabilities:
-> one — a conversational chatbot that qualifies leads and captures structured profile data,
-> two — a PDF extraction pipeline that reads existing insurance policies,
-> three — an AI gap analysis engine that produces broker-ready recommendations,
-> and four — a real-time pipeline dashboard that ties it all together.
-> Let me walk through each of these end to end."
+There are four things the system does. First, a conversational chatbot that qualifies leads and captures structured profile data. Second, a PDF extraction pipeline that reads the customer's existing insurance policies. Third, an AI gap analysis engine that tells the broker exactly what the customer is missing and what to recommend. And fourth, this real-time pipeline dashboard that the broker uses to manage everything.
 
-**Point out on screen:**
-- The kanban columns: New → Chatting → Qualified → Awaiting Docs → Processing → Completed
-- The KPI strip at the top (total leads, average score, docs pending, completed this week)
-- The green "Live" badge — "this is a live Supabase Realtime connection — the board updates the moment anything changes, no refresh needed"
-- Scroll through a few lead cards to show ticket numbers (#0001 etc.) and score badges
+[Point to the kanban columns left to right — New, Chatting, Qualified, Awaiting Docs, Processing, Completed.]
+
+Every lead moves through these stages automatically as the customer interacts with the system. And this green Live badge up here — that means the board is connected via a Supabase Realtime websocket. When anything changes anywhere, it shows up here instantly without a page refresh.
+
+[Point to the KPI strip at the top.]
+
+The broker gets a quick snapshot up top — total leads in the pipeline, average qualification score, how many are waiting on documents, and how many closed this week. All computed client-side from the same data, no extra queries.
 
 ---
 
 ## SEGMENT 2 — ARCHITECTURE (1:00 – 3:30)
+[Switch to Tab 4 — architecture diagram on mermaid.live]
 
-**Show:** Switch to the architecture Mermaid diagram (Tab 4)
+Let me quickly walk through the architecture before we get into the demo, because I think the design decisions here are worth explaining.
 
-**Say:**
-> "Before the demo, let me quickly walk through the architecture. Everything runs in a single Next.js 16 App Router project — the frontend pages and all API routes live in one repo, deployed to Vercel."
+[Point to the browser layer at the top.]
 
-**Point out on the architecture diagram:**
-- Browser splits into two portals: `/` for the broker, `/chat` for the customer
-- Next.js API routes: `/api/chat`, `/api/leads`, `/api/documents`, `/api/analysis`
-- AI layer: "Groq with llama-3.3-70b is the default — it's free and fast. Switching to Claude claude-sonnet-4-6 is one environment variable change. There's also a GPT-4.1-mini fallback for document extraction."
-- Supabase block: "PostgreSQL for persistence, Realtime websockets for the live dashboard, Storage for uploaded PDFs"
-- Upstash Redis: "Conversation history is cached here — the chat API checks Redis first on every message to avoid hitting the database. Rate limiting also runs through Redis — 20 messages per minute per IP."
-- Resend block: "Two separate Resend accounts — one for broker notifications, one for customer emails. This was the cleanest way to send to both addresses on Resend's free tier without a verified domain."
+Everything runs in a single Next.js 16 App Router project — no separate backend service. The frontend and all the API routes live in one repo, deployed to Vercel. This was a deliberate choice — for a CRM of this scale, a separate microservices backend would be over-engineering. Having everything in one place makes it much easier to reason about, debug, and deploy.
 
-**Switch to ERD diagram (Tab 5)**
+[Point to the two portal routes.]
 
-**Say:**
-> "The data model has five tables."
+There are two distinct portals. The broker logs into the root — that's the pipeline dashboard and lead management. The customer logs into slash chat — that's the conversational interface. The middleware checks the user's role in the database on every request and routes them to the right place. A broker trying to access the customer portal gets redirected to the dashboard, and vice versa.
 
-**Point out:**
-- `leads` — "central entity. One row per customer session. Has a self-join via `parent_lead_id` for follow-up sessions — more on that later."
-- `conversations` — "every single message in every chat, with role: user or assistant"
-- `documents` + `extracted_data` — "uploaded PDFs link to structured field rows"
-- `analyses` — "AI output per lead: gaps, savings, risk flags, recommendation, priority, confidence score"
-- `profiles` — "extends Supabase Auth users with role: broker or customer — drives the middleware routing"
-- Point to the ticket_number column: "auto-assigned by a PostgreSQL trigger on insert, so every lead gets a human-readable ID like #0017"
+[Point to the API routes.]
 
-**Switch to lead-flow diagram (Tab 6)**
+Four API routes handle all the server-side logic — chat, leads, documents, and analysis. Each one is responsible for one thing and one thing only.
 
-**Say:**
-> "And this is the full sequence — from customer opening the chat to the broker receiving an email. I'll walk through all of this live now."
+[Point to the AI layer.]
+
+Now this is an interesting part of the architecture. The default AI provider is Groq running llama-3.3-70b — it's free, it's fast, and for a demo environment it means zero API cost. But the system is designed so you can switch to Claude claude-sonnet-4-6 by changing a single environment variable. The abstraction layer in lib/ai.ts handles the routing — the rest of the code doesn't care which model is running. I also built in a GPT-4.1-mini fallback specifically for document extraction — if the primary model fails or returns invalid JSON, it retries once with GPT before giving up.
+
+[Point to Upstash Redis.]
+
+Redis handles two things — conversation history caching and rate limiting. Every time the chat API receives a message, it checks Redis first before touching Supabase. Conversation history is the most frequently read piece of data in this system, and caching it saves a database round-trip on every single message. The rate limiter runs a sliding window of 20 requests per minute per IP to prevent abuse and runaway API costs.
+
+[Point to the email block.]
+
+Email notifications go through Resend. I actually had to use two separate Resend accounts here — one registered to the personal email for customer notifications, one registered to the broker email for broker notifications. This was the cleanest solution on Resend's free tier, which only allows you to send to the email address you signed up with. Each account's restriction becomes an asset — the broker account can only send to the broker, which is exactly what we want.
+
+[Switch to Tab 5 — ERD diagram]
+
+The data model has five tables. Leads is the central entity — one row per customer session. Conversations stores every message in every chat. Documents and extracted_data handle the PDF pipeline. And analyses stores the AI-generated output.
+
+[Point to the self-join on leads.]
+
+One thing worth calling out — there's a self-join on the leads table via parent_lead_id. This enables follow-up sessions. When a returning customer starts a new chat, it creates a new lead row that points back to the original. Their profile syncs automatically across both sessions.
+
+[Point to ticket_number.]
+
+Every lead also gets a human-readable ticket number — #0001, #0002 — assigned automatically by a PostgreSQL trigger on insert. So the broker can say "I'm looking at ticket 17" in a call without needing to reference a UUID.
+
+[Switch to Tab 6 — lead flow diagram]
+
+And this is the full sequence from customer opening the chat to broker receiving a notification. I'll walk through all of this live now.
 
 ---
 
 ## SEGMENT 3 — CUSTOMER CHAT FLOW (3:30 – 7:00)
+[Switch to Tab 2 — customer chat portal. Make sure you're logged in as shubhanmehrotra@gmail.com]
 
-**Show:** Switch to Tab 2 — Customer chat at `/chat`
+So this is what the customer sees when they log in. A clean, full-screen chat interface. The persona here is Aria — a friendly insurance advisor at SecureLife. I want to show you a few specific things about how this works under the hood as we go through it.
 
-**Say:**
-> "This is the customer portal. The chatbot is Aria, a friendly insurance advisor persona. The goal is to collect a full insurance profile through natural conversation — not a form."
+[Type and send: "Hi, I'm looking for health insurance for my family"]
 
-**Type and send:** `"Hi, I need health insurance for my family"`
+The first thing to notice is that Aria acknowledges what the customer said before asking for anything. The prompt explicitly instructs her to never lead with a data collection question — she has to respond to the customer's stated need first. That makes the conversation feel natural rather than like filling out a form.
 
-**Show Aria's response — say:**
-> "Aria acknowledges the concern first before asking for anything. That's intentional — the prompt instructs her to never lead with a data collection question."
+[Wait for Aria's response, then provide a phone number when asked.]
 
-**When Aria asks for phone — type:** `9876500001`
+[When the occupation question comes up with the CHOICES widget visible — pause and point to it]
 
-**When Aria asks for occupation — CHOICES widget appears — say:**
-> "Here's one of the structured input widgets. Instead of free text, Aria renders a single-select choice list — twelve occupation categories. This was built to improve data accuracy. The customer clicks a button instead of typing, so we get clean, consistent data in the database."
+This is one of the things I'm quite happy with in the UX. Instead of asking "what do you do for work?" and getting a free-text answer that's hard to standardise — like "I'm a software guy" or "work at a hospital" — Aria presents a structured choice list. Twelve occupation categories. The customer clicks one button and we get clean, consistent data in the database every time.
 
-**Select:** "Doctor / Healthcare"
+[Select "Doctor / Healthcare"]
 
-**When Aria asks for income — CHOICES appear — say:**
-> "Same pattern for income — nine pre-defined brackets. The customer picks one, the system converts the label to a numeric midpoint — so '₹20–35 lakhs' becomes 2,750,000 in the database. No parsing ambiguity."
+Now here's what's happening in the background simultaneously. The moment that message is sent, there are two parallel extraction paths running. One is a regex engine that scans the message immediately — before the AI even responds — and extracts anything it can recognise: phone numbers, age, income labels, known occupation strings. The second path is the AI itself, which appends a structured JSON block called LEAD_DATA to every reply once it has collected any field. Both paths update the lead record — the regex path is instant, the AI path fills in more context. They're complementary.
 
-**Select:** "₹20–35 lakhs"
+[When income CHOICES appear]
 
-**When Aria asks for age — NUMBER_INPUT widget appears — say:**
-> "For numeric fields like age and family size, there's a number input widget — a stepper with min/max validation. No free text, no chance of getting 'thirty-two' instead of 32."
+Income brackets — same idea. Nine categories from under three lakhs to above one crore. And this is where it gets interesting — when the customer picks "₹20 to 35 lakhs", the system doesn't store that string. It converts it to a numeric midpoint — 2,750,000 rupees — so the data is immediately usable for scoring, analysis, and filtering without any downstream parsing.
 
-**Set age to 31, submit.**
+[Select "₹20–35 lakhs"]
 
-**When Aria asks for family size — NUMBER_INPUT — set to 3, submit.**
+[When the age NUMBER_INPUT widget appears]
 
-**When Aria asks about insurance interests — MULTI_CHOICES appear — say:**
-> "Multi-select for insurance interests — the customer can pick as many as apply. This populates the `concerns` array on the lead."
+For numeric fields — age and family size — there's a number input widget with a stepper. Again, the goal is the same: get clean, typed data rather than free text. No chance of getting "early thirties" in an age field.
 
-**Select:** Health Insurance, Life Insurance
+[Set age to 31, submit. Then set family size to 3 when it appears.]
 
-**Continue until Aria says a specialist will be in touch. Then say:**
-> "Two things just happened simultaneously. First, the moment Aria detected a phone number plus at least one concern, she tagged this lead as qualified and the database was updated. Second — an email fired automatically to the broker."
+[When insurance MULTI_CHOICES appear]
 
-**Switch to Tab 3 — Broker Gmail (teamedge)**
+Multi-select for insurance interests. This populates the concerns array on the lead — and unlike primary_concern which is a single value for backward compatibility, this captures everything the customer cares about.
 
-**Say:**
-> "Here it is — the broker notification landed automatically. Ticket number, full profile, all the fields Aria collected, and a direct link to open the lead in the CRM. This is powered by Resend using the broker's dedicated account."
+[Select Health Insurance and Life Insurance]
 
-**Point out:** name, phone, income, occupation, family size, interests chips, Open lead button
+[Continue the conversation until Aria wraps up and says a specialist will be in touch]
+
+Right — so the conversation is done. Now let me show you what just happened automatically in the background.
+
+[Switch to Tab 3 — broker Gmail (teamedge)]
+
+The broker received this email without any manual action. The moment Aria detected a phone number and at least one concern in the conversation, the API route set the lead status to qualified and immediately called the notification function. This email shows the ticket number, the full profile Aria collected — name, phone, age, occupation, income, family size, interests — and a direct link to open the lead in the CRM.
+
+[Point to the "Open lead →" button in the email]
+
+The broker can go straight from their inbox into the lead detail. No hunting through a dashboard.
 
 ---
 
 ## SEGMENT 4 — BROKER DASHBOARD REALTIME (7:00 – 8:30)
+[Switch to Tab 1 — broker dashboard]
 
-**Switch to Tab 1 — Broker dashboard**
+And here on the broker dashboard — that same lead is already sitting in the Qualified column. It appeared the moment the status changed. Supabase Realtime pushed the postgres_changes event over a websocket connection. The frontend is subscribed to INSERT and UPDATE events on the leads table and updates the kanban state in memory — no re-fetch, no polling.
 
-**Say:**
-> "And on the broker dashboard — that lead is already here in the Qualified column. No refresh. Supabase Realtime pushed the INSERT event via websocket the moment it happened."
+[Click into the new lead card]
 
-**Point out the new lead card:**
-- Ticket number, name, score badge, concern chips
-- "The score is computed from field completeness — this lead has 7 out of 10 fields filled so it scores around 70"
+This is the lead detail view. Let me walk through the right panel first.
 
-**Click into the lead — show the Lead Detail page. Say:**
-> "This is the lead detail view. On the right is the properties panel."
+[Point to the insurance interests chips]
 
-**Point out:**
-- Insurance interests as coloured chips
-- Financial profile section: income formatted as ₹28L/yr, occupation, age, family
-- Personal details: phone, email, location
-- Broker notes section: "This is editable inline — brokers can add private notes without leaving the page"
+Concerns come through as colour-coded chips — health and life in this case. Much easier to scan than reading a comma-separated string.
 
-**Click the pencil icon on Broker Notes — type:** `Doctor with high income — no health cover at all, priority follow-up`
+[Point to the financial profile section]
 
-**Click Save — say:**
-> "Saved via a PATCH to the leads API. No form submit, no page reload."
+Income is displayed in short form — ₹28L/yr — converted from the raw number. Occupation, age, family size all pulled from what Aria captured.
+
+[Point to the broker notes section]
+
+This section is editable inline. The broker doesn't need to go to a separate form. They click the pencil, type, and save — it's a PATCH to the leads API that updates the notes field.
+
+[Click the pencil, type: "Doctor with high income — no health cover. Sole earner. Call before Thursday." — click Save]
 
 ---
 
-## SEGMENT 5 — STATUS CHANGE & CUSTOMER EMAIL (8:30 – 9:30)
+## SEGMENT 5 — STATUS CHANGE AND CUSTOMER EMAIL (8:30 – 9:30)
+[Still on lead detail — find the status control]
 
-**Still on lead detail page — find the status selector**
+When the broker is ready to ask for documents, they move the lead to Awaiting Docs. This is a manual step — the broker decides when they've had enough of a conversation and want to see the customer's existing policies.
 
-**Say:**
-> "When the broker is ready to request documents, they move the lead to Awaiting Docs. This triggers a customer notification email automatically."
+[Change status to "Awaiting Docs"]
 
-**Change status to "Awaiting Docs"**
+And that status change triggers a customer notification automatically — the API route checks whether the status transition is from qualified to awaiting_docs and fires the email.
 
-**Switch to Tab 2 customer Gmail (shubhanmehrotra@gmail.com) — say:**
-> "The customer receives this email — asking them to upload their existing policy documents through the chat portal. The link goes straight back to their session."
+[Switch to Tab 2 — customer Gmail (shubhanmehrotra@gmail.com)]
 
-**Show the email — point out:** personalised greeting with first name, upload button, privacy note
+The customer receives this email asking them to upload their existing policy documents. It's personalised — uses their first name — and the button takes them straight back to their chat portal.
+
+[Point to the email content]
+
+The copy here is deliberately warm — "our advisor team would love to review your existing policy documents". This is a customer-facing email so the tone is different from the broker notifications.
 
 ---
 
-## SEGMENT 6 — PDF UPLOAD & EXTRACTION (9:30 – 11:30)
+## SEGMENT 6 — PDF UPLOAD AND EXTRACTION (9:30 – 11:30)
+[Switch to Tab 1 — broker dashboard, go to the lead detail, Documents tab]
 
-**Switch to the Lead Detail page — go to Documents tab**
+Back on the broker view — the documents tab shows the upload zone. I'm going to upload two sample insurance policy PDFs now.
 
-**Say:**
-> "Back on the lead detail as broker — the Documents tab shows the upload zone. Let me upload the two sample policies."
+[Upload samples/lic-tech-term-plan.pdf]
 
-**Upload `samples/lic-tech-term-plan.pdf` — say:**
-> "This is an LIC Tech Term plan. The pipeline runs pdf-parse to extract raw text, then sends it to the AI with a strict JSON schema prompt — the model is told to use null for any field not in the document, never hallucinate."
+This is an LIC Tech Term plan. When this file lands on the API route, a few things happen. First, pdf-parse extracts the raw text — this is a pure Node.js library, no external service, which matters because Vercel's serverless functions can't shell out to system commands. Then that raw text goes to the AI with a strict extraction prompt. The prompt includes the full JSON schema and explicit instructions: use null for any field not in the document, never guess, never hallucinate values.
 
-**Show the extracted fields appearing:**
-- Policy number, type: Life, provider: LIC of India
-- Sum insured: ₹1,50,00,000
-- Annual premium: ₹17,412
-- Coverage dates, renewal date
-- Exclusions
+[Show the extracted fields appearing]
 
-**Say:**
-> "Every field is Zod-validated before it touches the database. If the AI returns something that doesn't match the schema, we retry once with the error message in the prompt, then fall back to GPT-4.1-mini."
+Policy number, policy type — life — provider LIC of India. Sum insured one crore fifty lakhs. Annual premium seventeen thousand four hundred and twelve rupees. Coverage dates, renewal date. Exclusions — suicide clause, hazardous activities.
 
-**Upload `samples/star-health-family-floater.pdf` — say:**
-> "Second document — a Star Health family floater. Different policy type, different fields."
+[Point to raw_fields section if visible]
 
-**Show extracted fields:**
-- Type: Health, provider: Star Health
-- Sum insured: ₹10,00,000
-- Family floater covering 3 members
-- Pre-existing condition: Hypertension, 36-month waiting period
-- Premium: ₹26,491/yr
+The full extraction JSON is also stored in raw_fields — a jsonb column — alongside the structured columns. That means if we later want to add a new field to the extraction schema, we can backfill it from the raw JSON without re-running the AI on every document.
 
-**Say:**
-> "Notice the pre-existing condition and the waiting period — these go directly into the analysis as risk flags."
+[Upload samples/star-health-family-floater.pdf]
+
+Second document — a Star Health family floater covering three members.
+
+[Show extracted fields]
+
+Health policy, sum insured ten lakhs, annual premium twenty-six thousand. Three family members. And here — pre-existing condition: hypertension, with a thirty-six month waiting period. That's a really important piece of information for the analysis.
 
 ---
 
 ## SEGMENT 7 — AI GAP ANALYSIS (11:30 – 13:30)
+[Click Generate Analysis button]
 
-**Click "Generate Analysis" button — say:**
-> "Now for the analysis. This uses a persona called Arjun Kapoor — a senior insurance consultant with 24 years of experience. The AI receives the full lead profile plus both extracted documents and runs through a seven-section framework."
+Now for the analysis. The AI persona here is different — this is Arjun Kapoor, a senior insurance consultant with twenty-four years of experience. The system prompt establishes his background — IRDA certified, chartered insurance practitioner, has personally advised over two thousand five hundred Indian families. The analysis is written for junior brokers who will call the client within twenty-four hours. So the tone is blunt and specific — not marketing copy.
 
-**While it loads, say:**
-> "The seven sections are: life stage assessment, Human Life Value calculation, health insurance adequacy against Indian benchmarks, protection gaps like critical illness and personal accident cover, existing coverage review from the documents, tax optimisation under Section 80C and 80D, and premium affordability as a percentage of income."
+[While it loads — keep talking]
 
-**Analysis loads — show and point out:**
+The prompt runs through seven sections. Life stage assessment — is this person early career, prime earning, pre-retirement, or near-retirement? Human Life Value calculation — the recommended life cover is fifteen to twenty times annual income for someone with dependants. Health adequacy against Indian benchmarks — ten lakhs minimum for an individual, twenty lakhs for a family floater in a metro city. Protection gaps — things like critical illness cover and personal accident that most people don't think about. Existing coverage review from the documents we just uploaded. Tax optimisation — Section 80C for life premiums, 80D for health premiums. And premium affordability — total premiums should be three to six percent of income, never more than ten.
 
-- **Coverage gaps** — "HLV recommends ₹4.2–5.6 Cr at this income level. The existing LIC term is only ₹1.5 Cr — a ₹3 Cr shortfall. No standalone critical illness cover."
-- **Risk flags** — "The hypertension pre-existing condition has a 36-month waiting period — if hospitalisation happens before June 2027, the health policy won't pay. That's a major gap."
-- **Potential savings** — "80D hasn't been utilised — ₹26,491 premium is fully deductible. That's a saving of ₹8,247/yr at the 31% tax bracket."
-- **Recommendation** — "Specific product types with rupee amounts — not vague suggestions. Pure term top-up to ₹3 Cr, standalone critical illness ₹25–50L, super top-up for health."
-- **Priority badge** — "High. Confidence: 78%. The confidence is lower than 100% because some fields are STATED — from the chat — not VERIFIED from a document."
-- **STATED vs VERIFIED discipline** — "The AI distinguishes what the client told us versus what's in an actual document. Income is STATED. The policy details are VERIFIED. That distinction drives the confidence score and tells the broker where to probe further."
+[Analysis appears — walk through it]
 
-**Switch to Tab 3 — Broker Gmail (teamedge) — say:**
-> "And the broker gets a third email — analysis ready, with priority level and a preview of the recommendation."
+[Point to coverage gaps]
+
+Coverage gaps — the HLV at this income level recommends four to five crore of life cover. The existing LIC term plan is only one and a half crore. There's a gap of at least two and a half crore. And there's no health insurance at all despite employer group cover — group cover lapses the moment you change jobs, which at a doctor's career stage is a real risk.
+
+[Point to risk flags]
+
+Risk flags — this is where the pre-existing hypertension condition matters. The Star Health policy has a thirty-six month waiting period for pre-existing conditions. That means if this person needs hospitalisation for anything hypertension-related before mid-2027, the policy won't pay. The analysis flags that as a critical risk.
+
+[Point to potential savings]
+
+Potential savings — the Section 80D limit hasn't been utilised. At this income and tax bracket, the health premium is fully deductible — that's roughly eight thousand rupees a year in actual tax saving.
+
+[Point to recommendation]
+
+And the recommendation — specific product types with rupee amounts. Pure term top-up to three crore. Standalone critical illness plan, twenty-five to fifty lakhs. Super top-up health cover as a cost-effective way to increase the health sum insured.
+
+[Point to confidence score and priority]
+
+Priority is high. Confidence is seventy-eight percent — not a hundred, and here's why. The income figure, the occupation, the family size — those are all STATED. The customer told Aria. They haven't been verified against any document. The policy details from the two PDFs are VERIFIED — the AI actually read those. That distinction is built into the prompt as a discipline. It tells the broker: trust the policy details, probe on the financial profile.
+
+[Switch to Tab 3 — broker Gmail]
+
+And a third email to the broker — analysis ready, with the priority level and a preview of the recommendation. The broker can read the headline in their inbox and decide whether to call immediately or schedule it.
 
 ---
 
-## SEGMENT 8 — FOLLOW-UP SESSIONS (13:30 – 14:15)
+## SEGMENT 8 — FOLLOW-UP SESSIONS (13:30 – 14:00)
+[Switch to Tab 2 — customer chat portal]
 
-**Switch to customer chat portal at `/chat`**
+One more feature worth showing. If a returning customer logs back in — maybe they have a question after the initial consultation — they can start a follow-up session.
 
-**Say:**
-> "One more feature — returning customers can start a follow-up session. If the same customer logs back in after their initial consultation, they see their previous sessions and can open a linked follow-up."
+[Show the session history and start a follow-up]
 
-**Show the session history list — click "Start follow-up"**
-
-**Say:**
-> "The follow-up chat has a different persona — it already knows their name and history, and focuses on answering questions rather than collecting data again. Any new information they share gets synced back to all their previous sessions automatically via a cross-session profile sync function."
-
-**Show the follow-up greeting — point out:** "it references their existing enquiry and topic rather than starting from scratch"
+The follow-up chat has a completely different persona mode. It knows this person's name and their existing enquiry. Instead of collecting information, it focuses on answering questions. And if the customer mentions something new — a new concern, an updated income — the system propagates that information backwards to their original session via a cross-session sync function. So the broker's view always has the most up-to-date profile regardless of which session the customer last interacted with.
 
 ---
 
-## SEGMENT 9 — PIPELINE & FILTERS (14:15 – 14:45)
+## SEGMENT 9 — PIPELINE VIEW AND TOOLS (14:00 – 14:45)
+[Back to broker dashboard — show the full pipeline]
 
-**Back to broker dashboard — say:**
-> "The full pipeline. Every lead across all stages."
+The full pipeline with all the seed data loaded. Seven leads across every stage — you can see the whole lifecycle at once.
 
-**Show:**
-- Scroll across all kanban columns
-- Point out the different status colours and score badges
-- Show the filter controls — filter by status or score range
-- "Seven leads seeded across every stage so you can see the full pipeline at a glance"
+[Scroll across the columns]
 
-**Briefly open `docs/architecture.md` in VS Code — say:**
-> "The full architecture doc, data model doc, AI strategy doc, and edge cases doc are all in the repo. The Mermaid diagrams in `diagrams/` are version-controlled and auto-regenerated by a local Claude Code cron loop whenever source files change."
+Each card shows the ticket number, the customer's name, their score, and their concern chips. The score is computed from field completeness — a lead with name, phone, email, age, income, family size, concerns, and location filled in scores around eighty. Missing fields drag it down.
 
-**Briefly show `frontend/lib/prompts.ts` in VS Code — say:**
-> "All AI prompts live in a single file — never inline in route handlers. The Aria persona, the Arjun Kapoor analysis persona, the extraction schema — all here, version-controlled, easy to audit and change."
+[Briefly open VS Code — show lib/prompts.ts]
+
+One thing I want to show quickly — all the AI prompts live in a single file. The Aria chatbot persona, the Arjun Kapoor analysis persona, the document extraction schema, the follow-up session prompt. None of them are inline in the route handlers. This makes them easy to audit, version-control, and iterate on without touching any business logic.
+
+[Briefly show lib/notifications.ts]
+
+And the email templates — all four notification functions in one file. The template functions — wrap, pill, cta, field — are shared so every email has a consistent dark-branded look without duplicating HTML.
+
+[Show the scripts/loops/ folder briefly]
+
+Finally — local automation. There are two Claude Code loop files. One runs the test suite every thirty minutes and reports failures. The other checks for a .docs-pending flag that the post-commit hook writes whenever source files change, and if it finds it, regenerates all the Mermaid diagrams and the architecture doc automatically. So the documentation stays in sync with the code without any manual effort.
 
 ---
 
 ## SEGMENT 10 — WRAP-UP (14:45 – 15:00)
+[Back to broker dashboard — final wide shot]
 
-**Show broker dashboard one final time**
+So to bring it all together — what's been built and shipped is a complete insurance lead management pipeline. A customer starts a conversation, gets qualified automatically, the broker is notified, documents are requested and extracted, an AI analysis is generated with specific Indian insurance recommendations, and the broker has everything they need to make a call.
 
-**Say:**
-> "To summarise what's built and shipped:
-> — Conversational lead capture with structured CHOICES and NUMBER_INPUT widgets
-> — Real-time broker dashboard via Supabase Realtime websockets
-> — PDF extraction with Claude or Groq plus Zod schema validation
-> — AI gap analysis with an Indian insurance expert persona and seven-section framework
-> — Dual Resend email notifications — broker gets qualified, docs, and analysis alerts; customer gets the docs request
-> — Follow-up sessions with cross-session profile sync
-> — Role-based auth with Supabase and Google SSO
-> — 51 unit tests with a pre-commit hook that blocks commits on failure
-> — Local automation loops for doc regeneration via Claude Code CronCreate
-> — Full architecture, data model, AI strategy, and edge case documentation in the repo
->
-> The stack is Next.js 16, TypeScript, Supabase, Groq as the default free AI provider with Claude as a one-env-var upgrade, Upstash Redis, and Resend for email. Thanks for watching."
+The stack is Next.js 16 on Vercel, Supabase for the database and realtime, Groq as the default free AI provider with Claude as a production upgrade, Upstash Redis for caching and rate limiting, and Resend for email. Fifty-one unit tests with a pre-commit hook that enforces them before every commit. Full architecture, data model, AI strategy, and edge case documentation in the repo.
+
+Thanks for watching.
 
 ---
 
-## QUICK REFERENCE — CREDENTIALS FOR THE RECORDING
+## YOUR CHEAT SHEET — THINGS THAT HAPPEN AUTOMATICALLY
+[Keep this visible on your second monitor while recording — never mention it on camera]
 
-| Role | Email | Password |
+| You do this | System does this automatically |
+|-------------|-------------------------------|
+| Customer gives phone + any concern in chat | Lead → qualified, broker email fires to teamedge |
+| Broker moves lead to Awaiting Docs | Customer email fires |
+| PDF uploaded | Extraction runs, fields saved, document status → extracted |
+| Broker clicks Generate Analysis | Analysis saved, broker email fires |
+
+## CREDENTIALS
+[Do not show on camera]
+
+| Role | Login | Password |
 |------|-------|----------|
 | Broker | shubhanmehrotra.teamedge@gmail.com | Broker123! |
-| Customer | shubhanmehrotra@gmail.com | (Google SSO or your existing password) |
-
-## THINGS THAT HAPPEN AUTOMATICALLY (no manual steps needed)
-
-| Action | Automatic result |
-|--------|-----------------|
-| Customer gives phone + concern in chat | Lead → Qualified + broker email fires |
-| Broker moves lead to Awaiting Docs | Customer email fires |
-| PDF extracted successfully | Document status → extracted, fields shown |
-| Broker clicks Generate Analysis | Analysis saved + broker email fires |
-| Any source file committed to git | `.docs-pending` flag written → Claude Code loop regenerates diagrams |
+| Customer | shubhanmehrotra@gmail.com | your Google password |
