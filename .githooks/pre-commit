@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs vitest before every commit. Aborts if any test fails.
+
+echo "Running tests before commit..."
+cd frontend && npm test
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "ERROR: Tests failed. Commit aborted."
+  echo "Fix the failing tests then try again."
+  exit 1
+fi
+
+echo "All tests passed. Proceeding with commit."
+exit 0
