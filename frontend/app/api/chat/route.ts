@@ -88,15 +88,20 @@ export async function POST(req: NextRequest) {
     logger.info(ROUTE, `AI replied in ${Date.now() - aiStart}ms (${reply.length} chars)`)
 
     // Parse LEAD_DATA if present and update lead
-    const leadDataMatch = reply.match(/LEAD_DATA:(\{[\s\S]*?\})/)
-    const cleanReply = reply.replace(/LEAD_DATA:\{[\s\S]*?\}/, '').trim()
+    // Use a greedy match to capture the full JSON object (arrays use [] not {}, so first } closes the root)
+    const leadDataMatch = reply.match(/LEAD_DATA:(\{[^]*?\})(?:\s|$|CHOICES|MULTI_CHOICES)/)
+      ?? reply.match(/LEAD_DATA:(\{[^]*\})/)
+    const cleanReply = reply.replace(/LEAD_DATA:\{[^]*?\}/, '').trim()
 
     if (leadDataMatch) {
       try {
         const leadData = JSON.parse(leadDataMatch[1])
         const updates: Record<string, unknown> = {}
-        if (leadData.name)              updates.name = leadData.name
-        if (leadData.email)             updates.email = leadData.email
+        // Prefer LEAD_DATA fields; fall back to userProfile for name/email if AI left them blank
+        const resolvedName  = leadData.name  || userProfile?.name  || null
+        const resolvedEmail = leadData.email || userProfile?.email || null
+        if (resolvedName)               updates.name = resolvedName
+        if (resolvedEmail)              updates.email = resolvedEmail
         if (leadData.phone)             updates.phone = leadData.phone
         if (leadData.age)               updates.age = leadData.age
         if (leadData.occupation)        updates.occupation = leadData.occupation
@@ -114,13 +119,16 @@ export async function POST(req: NextRequest) {
         if (leadData.location) updates.location = leadData.location
 
         if (Object.keys(updates).length > 0) {
-          updates.status = 'qualified'
+          // Only mark qualified when we have contact info + at least one concern
+          const hasContact = !!(updates.phone || updates.email)
+          const hasConcern = !!(updates.primary_concern || (Array.isArray(updates.concerns) && (updates.concerns as string[]).length > 0))
+          if (hasContact && hasConcern) updates.status = 'qualified'
           updates.score = Math.min(
             100,
-            Object.values(updates).filter(v => v !== null && v !== undefined).length * 10
+            Object.values(updates).filter(v => v !== null && v !== undefined && v !== '').length * 10
           )
           await supabaseAdmin.from('leads').update(updates).eq('id', currentLeadId)
-          logger.info(ROUTE, `lead:${currentLeadId} qualified`, { fields: Object.keys(updates) })
+          logger.info(ROUTE, `lead:${currentLeadId} updated`, { fields: Object.keys(updates), qualified: updates.status === 'qualified' })
         }
       } catch {
         logger.warn(ROUTE, `lead:${currentLeadId} LEAD_DATA parse failed — malformed JSON from AI`)

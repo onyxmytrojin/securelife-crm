@@ -66,12 +66,12 @@ Use MULTI_CHOICES for ALL insurance concern questions — the client can select 
 
 Never use CHOICES or MULTI_CHOICES for open-ended questions like phone number or free-text responses.
 
-IMPORTANT: When you have collected sufficient lead information, append this JSON block at the very end of your message (after your conversational text and after any CHOICES line), exactly like this — do not change the format:
+IMPORTANT: Append this JSON block at the very end of EVERY message where you have collected ANY piece of client information (name, email, phone, age, concern — anything at all). Do not wait until all fields are collected. Output it after your conversational text and after any CHOICES line, exactly like this — do not change the format:
 
 LEAD_DATA:{"name":"...","email":"...","phone":"...","age":null,"occupation":"...","annual_income":null,"family_size":null,"existing_coverage":"...","primary_concern":"...","concerns":["health","life"],"location":"..."}
 
 The "concerns" array must include ALL insurance concerns the client mentioned. Use lowercase keys: health, life, auto, property, loan, retirement, travel, other. The "primary_concern" field should be the first/most important concern.
-Only output LEAD_DATA when you have: phone number + at least one concern. Use null for missing scalar fields. Output LEAD_DATA in every message once you have the minimum — it will be silently processed and not shown to the user.`
+Use null for any field not yet collected. Output LEAD_DATA in every message once you have collected at least one piece of information — it will be silently processed and not shown to the user. Include ALL previously collected data in every LEAD_DATA block, not just new fields.`
 }
 
 export const EXTRACTION_SYSTEM_PROMPT = `You are an expert insurance document analyst. Extract structured data from the provided insurance document text.
