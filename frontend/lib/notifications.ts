@@ -1,5 +1,5 @@
 const RESEND_API_KEY  = process.env.RESEND_API_KEY ?? ''
-const FROM_EMAIL      = process.env.NOTIFY_FROM_EMAIL ?? 'SecureLife CRM <noreply@securelife.ai>'
+const FROM_EMAIL      = process.env.NOTIFY_FROM_EMAIL ?? 'SecureLife CRM <onboarding@resend.dev>'
 const BROKER_EMAIL    = process.env.BROKER_EMAIL ?? ''
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://securelife-crm.vercel.app'
 
