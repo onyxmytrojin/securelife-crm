@@ -1,11 +1,11 @@
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  // Primary: pdf-parse v1 (fast, free, works for text-layer PDFs)
+  // Primary: unpdf (serverless-safe, WASM-based pdfjs-dist, no canvas dependency)
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
-    const data = await pdfParse(buffer)
-    const text = data.text.trim()
-    if (text.length > 20) return text
+    const { extractText } = await import('unpdf')
+    const uint8 = new Uint8Array(buffer)
+    const { text } = await extractText(uint8, { mergePages: true })
+    const trimmed = (text as string).trim()
+    if (trimmed.length > 20) return trimmed
   } catch {
     // fall through to Claude vision
   }
