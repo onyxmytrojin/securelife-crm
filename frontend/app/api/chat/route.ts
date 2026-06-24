@@ -10,7 +10,7 @@ import {
 } from '@/lib/prompts'
 import { logger } from '@/lib/logger'
 import { redis, chatRatelimit } from '@/lib/redis'
-import { extractConcernsFromMessage } from '@/lib/concerns'
+import { extractConcernsFromMessage, extractFieldsFromMessage } from '@/lib/concerns'
 
 const ROUTE = '/api/chat'
 
@@ -87,17 +87,31 @@ export async function POST(req: NextRequest) {
       content: message,
     })
 
-    // Immediately extract and save insurance concerns from the user's message — don't wait for AI
+    // Immediately extract and save structured fields from the user's message — don't wait for AI
     const msgConcerns = extractConcernsFromMessage(message)
-    if (msgConcerns.length > 0) {
+    const msgFields   = extractFieldsFromMessage(message)
+    const hasExtracts = msgConcerns.length > 0 || Object.keys(msgFields).length > 0
+    if (hasExtracts) {
       const { data: existingLead } = await supabaseAdmin
-        .from('leads').select('concerns, primary_concern').eq('id', currentLeadId).single()
-      const merged = Array.from(new Set([...(existingLead?.concerns ?? []), ...msgConcerns]))
-      await supabaseAdmin.from('leads').update({
-        concerns: merged,
-        primary_concern: existingLead?.primary_concern || msgConcerns[0],
-      }).eq('id', currentLeadId)
-      logger.info(ROUTE, `lead:${currentLeadId} concerns extracted from message`, { new: msgConcerns, merged })
+        .from('leads').select('concerns, primary_concern, phone, age, family_size').eq('id', currentLeadId).single()
+      const immediateUpdate: Record<string, unknown> = {}
+      // Concerns
+      if (msgConcerns.length > 0) {
+        const merged = Array.from(new Set([...(existingLead?.concerns ?? []), ...msgConcerns]))
+        immediateUpdate.concerns = merged
+        if (!existingLead?.primary_concern) immediateUpdate.primary_concern = msgConcerns[0]
+      }
+      // Phone — only overwrite if not already set
+      if (msgFields.phone && !existingLead?.phone) immediateUpdate.phone = msgFields.phone
+      // Age — only overwrite if not already set
+      if (msgFields.age && !existingLead?.age) immediateUpdate.age = msgFields.age
+      // Family size — only overwrite if not already set
+      if (msgFields.family_size && !existingLead?.family_size) immediateUpdate.family_size = msgFields.family_size
+
+      if (Object.keys(immediateUpdate).length > 0) {
+        await supabaseAdmin.from('leads').update(immediateUpdate).eq('id', currentLeadId)
+        logger.info(ROUTE, `lead:${currentLeadId} fields extracted from message`, { concerns: msgConcerns, fields: msgFields })
+      }
     }
 
     // Load conversation history — Redis cache first, Supabase fallback
