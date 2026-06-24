@@ -1,24 +1,23 @@
-const RESEND_API_KEY  = process.env.RESEND_API_KEY ?? ''
-const FROM_EMAIL      = process.env.NOTIFY_FROM_EMAIL ?? 'SecureLife CRM <onboarding@resend.dev>'
-const BROKER_EMAIL    = process.env.BROKER_EMAIL ?? ''
-const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://securelife-crm.vercel.app'
+// Broker emails use RESEND_BROKER_API_KEY (teamedge Resend account → delivers to teamedge@gmail.com)
+// Customer emails use RESEND_API_KEY (original Resend account → delivers to account-owner email)
+
+const RESEND_API_KEY        = process.env.RESEND_API_KEY ?? ''
+const RESEND_BROKER_API_KEY = process.env.RESEND_BROKER_API_KEY ?? ''
+const BROKER_EMAIL          = process.env.BROKER_EMAIL ?? ''
+const APP_URL               = process.env.NEXT_PUBLIC_APP_URL ?? 'https://securelife-crm.vercel.app'
+
+const FROM = 'SecureLife CRM <onboarding@resend.dev>'
 
 // ─── Internal send ────────────────────────────────────────────────────────────
 
-async function sendEmail(to: string, subject: string, html: string) {
-  if (!RESEND_API_KEY || !to) return
+async function sendEmail(apiKey: string, to: string, subject: string, html: string) {
+  if (!apiKey || !to) return
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html }),
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: FROM, to: [to], subject, html }),
   })
-  if (!res.ok) {
-    const err = await res.text()
-    console.error('[notifications] Resend error:', err)
-  }
+  if (!res.ok) console.error('[notifications] Resend error:', await res.text())
 }
 
 // ─── Shared template shell ────────────────────────────────────────────────────
@@ -31,16 +30,13 @@ function wrap(content: string) {
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#111317;border-radius:12px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;">
-        <!-- Header -->
         <tr>
           <td style="padding:20px 28px;border-bottom:1px solid rgba(255,255,255,0.06);">
             <span style="font-size:15px;font-weight:700;color:#F7F8FA;letter-spacing:-0.3px;">SecureLife</span>
             <span style="font-size:15px;color:#5E6AD2;font-weight:400;"> CRM</span>
           </td>
         </tr>
-        <!-- Body -->
         <tr><td style="padding:28px;">${content}</td></tr>
-        <!-- Footer -->
         <tr>
           <td style="padding:16px 28px;border-top:1px solid rgba(255,255,255,0.06);">
             <p style="margin:0;font-size:12px;color:#4B5058;">SecureLife Insurance Brokers · This is an automated notification.</p>
@@ -69,7 +65,7 @@ function field(label: string, value: string | null | undefined) {
   </tr>`
 }
 
-// ─── Broker notifications ─────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface LeadSummary {
   id: string
@@ -91,18 +87,23 @@ function ticketLabel(lead: LeadSummary) {
 
 function concernList(lead: LeadSummary) {
   const all = [...new Set([...(lead.concerns ?? []), lead.primary_concern].filter(Boolean))]
-  return all.length ? all.map(c => `<strong style="color:#8B97E8;text-transform:capitalize;">${c}</strong>`).join(', ') : 'Not specified'
+  return all.length
+    ? all.map(c => `<strong style="color:#8B97E8;text-transform:capitalize;">${c}</strong>`).join(', ')
+    : 'Not specified'
 }
 
+// ─── Broker notifications (use broker Resend account → teamedge inbox) ────────
+
 export async function notifyBrokerQualified(lead: LeadSummary) {
-  const name   = lead.name ?? 'Unknown'
-  const ticket = ticketLabel(lead)
+  const name      = lead.name ?? 'Unknown'
+  const ticket    = ticketLabel(lead)
   const detailUrl = `${APP_URL}/leads/${lead.id}`
   const incomeStr = lead.annual_income
     ? `₹${(lead.annual_income / 100000).toFixed(1).replace(/\.0$/, '')}L/yr`
     : null
 
   await sendEmail(
+    RESEND_BROKER_API_KEY,
     BROKER_EMAIL,
     `🎯 New qualified lead — ${ticket}${name}`,
     wrap(`
@@ -110,13 +111,13 @@ export async function notifyBrokerQualified(lead: LeadSummary) {
       <p style="margin:0 0 20px;font-size:13px;color:#6B7280;">Just qualified via chatbot · Needs follow-up within 48h</p>
       ${pill('Qualified', '#22c55e')}
       <table style="margin-top:20px;width:100%;border-collapse:collapse;">
-        ${field('Phone',       lead.phone)}
-        ${field('Email',       lead.email)}
-        ${field('Age',         lead.age ? `${lead.age} yrs` : null)}
-        ${field('Occupation',  lead.occupation)}
-        ${field('Income',      incomeStr)}
-        ${field('Family',      lead.family_size ? `${lead.family_size} members` : null)}
-        ${field('Interests',   concernList(lead))}
+        ${field('Phone',      lead.phone)}
+        ${field('Email',      lead.email)}
+        ${field('Age',        lead.age ? `${lead.age} yrs` : null)}
+        ${field('Occupation', lead.occupation)}
+        ${field('Income',     incomeStr)}
+        ${field('Family',     lead.family_size ? `${lead.family_size} members` : null)}
+        ${field('Interests',  concernList(lead))}
       </table>
       ${cta(detailUrl, 'Open lead')}
     `)
@@ -124,11 +125,12 @@ export async function notifyBrokerQualified(lead: LeadSummary) {
 }
 
 export async function notifyBrokerDocsReceived(lead: LeadSummary, docCount: number) {
-  const name   = lead.name ?? 'Unknown'
-  const ticket = ticketLabel(lead)
+  const name      = lead.name ?? 'Unknown'
+  const ticket    = ticketLabel(lead)
   const detailUrl = `${APP_URL}/leads/${lead.id}`
 
   await sendEmail(
+    RESEND_BROKER_API_KEY,
     BROKER_EMAIL,
     `📄 Documents received — ${ticket}${name}`,
     wrap(`
@@ -149,8 +151,8 @@ export async function notifyBrokerAnalysisReady(
   lead: LeadSummary,
   analysis: { priority: string; recommendation: string; confidence_score: number }
 ) {
-  const name   = lead.name ?? 'Unknown'
-  const ticket = ticketLabel(lead)
+  const name      = lead.name ?? 'Unknown'
+  const ticket    = ticketLabel(lead)
   const detailUrl = `${APP_URL}/leads/${lead.id}`
 
   const priorityColor =
@@ -159,6 +161,7 @@ export async function notifyBrokerAnalysisReady(
     analysis.priority === 'medium' ? '#5E6AD2' : '#6B7280'
 
   await sendEmail(
+    RESEND_BROKER_API_KEY,
     BROKER_EMAIL,
     `✅ Analysis ready — ${ticket}${name} [${analysis.priority.toUpperCase()}]`,
     wrap(`
@@ -173,14 +176,15 @@ export async function notifyBrokerAnalysisReady(
   )
 }
 
-// ─── Customer notifications ───────────────────────────────────────────────────
+// ─── Customer notifications (use original Resend account) ────────────────────
 
 export async function notifyCustomerDocsRequested(lead: LeadSummary) {
   if (!lead.email) return
-  const name = lead.name?.split(' ')[0] ?? 'there'
+  const name    = lead.name?.split(' ')[0] ?? 'there'
   const chatUrl = `${APP_URL}/chat`
 
   await sendEmail(
+    RESEND_API_KEY,
     lead.email,
     'SecureLife — Please share your policy documents',
     wrap(`
