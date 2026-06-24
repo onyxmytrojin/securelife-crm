@@ -47,6 +47,14 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Always sync auth identity — name/email from login are ground truth, don't wait for AI extraction
+    if (userProfile?.name || userProfile?.email) {
+      const identityUpdate: Record<string, unknown> = {}
+      if (userProfile.name)  identityUpdate.name  = userProfile.name
+      if (userProfile.email) identityUpdate.email = userProfile.email
+      await supabaseAdmin.from('leads').update(identityUpdate).eq('id', currentLeadId)
+    }
+
     logger.info(ROUTE, `POST lead:${currentLeadId} msg:"${message.slice(0, 60)}${message.length > 60 ? '…' : ''}"`)
 
     // Save user message

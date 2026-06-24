@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChatWindow } from '@/components/chat/ChatWindow'
 import { createClient } from '@/lib/supabase-browser'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -36,6 +36,10 @@ export default function CustomerChatPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [userProfile, setUserProfile] = useState<{ name: string; email: string } | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+  const [nameSaving, setNameSaving] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
   const router   = useRouter()
   const supabase = createClient()
 
@@ -45,12 +49,30 @@ export default function CustomerChatPage() {
       if (!user) return
       const authEmail = user.email ?? ''
       const { data: p } = await supabase.from('profiles').select('name, email').eq('id', user.id).single()
-      setUserProfile({
-        name:  (p as { name?: string; email?: string } | null)?.name  || user.user_metadata?.full_name || user.user_metadata?.name || '',
-        email: (p as { name?: string; email?: string } | null)?.email || authEmail,
-      })
+      const profileName  = (p as { name?: string; email?: string } | null)?.name  || user.user_metadata?.full_name || user.user_metadata?.name || ''
+      const profileEmail = (p as { name?: string; email?: string } | null)?.email || authEmail
+      // Show name prompt if name is missing or is just the email prefix (DB trigger fallback)
+      const emailPrefix = profileEmail.split('@')[0]
+      const nameIsPlaceholder = !profileName || profileName === emailPrefix
+      if (nameIsPlaceholder) setShowNamePrompt(true)
+      setUserProfile({ name: profileName, email: profileEmail })
     })()
   }, [])
+
+  useEffect(() => {
+    if (showNamePrompt) setTimeout(() => nameInputRef.current?.focus(), 50)
+  }, [showNamePrompt])
+
+  const saveUserName = async () => {
+    const trimmed = nameInput.trim()
+    if (!trimmed || !userProfile) return
+    setNameSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) await supabase.from('profiles').update({ name: trimmed }).eq('id', user.id)
+    setUserProfile(prev => prev ? { ...prev, name: trimmed } : prev)
+    setShowNamePrompt(false)
+    setNameSaving(false)
+  }
 
   const fetchLeadData = useCallback(async (id: string) => {
     const [{ data: l }, { data: docs }] = await Promise.all([
@@ -71,6 +93,36 @@ export default function CustomerChatPage() {
 
   return (
     <div className="min-h-screen bg-[#08090B] flex flex-col">
+      {/* Name prompt modal */}
+      {showNamePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="bg-[#0B0D10] border border-white/[0.08] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="w-10 h-10 rounded-full bg-[#5E6AD2]/20 flex items-center justify-center mb-4">
+              <User className="w-5 h-5 text-[#5E6AD2]" />
+            </div>
+            <h2 className="text-[16px] font-semibold text-[#F7F8FA] mb-1">What should we call you?</h2>
+            <p className="text-[12px] text-[#6B7280] mb-4">Your advisor Priya will use this to personalise your experience.</p>
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && void saveUserName()}
+              placeholder="Your full name"
+              className="w-full bg-[#111317] border border-white/[0.08] rounded-lg px-3 py-2.5 text-[13px] text-[#F7F8FA]
+                placeholder-[#3A3A3A] outline-none focus:border-[#5E6AD2]/60 transition-colors mb-3"
+            />
+            <button
+              onClick={() => void saveUserName()}
+              disabled={!nameInput.trim() || nameSaving}
+              className="w-full bg-[#5E6AD2] hover:bg-[#4F5BC0] disabled:opacity-40 disabled:cursor-not-allowed
+                text-white text-[13px] font-medium py-2.5 rounded-lg transition-colors">
+              {nameSaving ? 'Saving…' : 'Continue'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="h-12 bg-[#0B0D10] border-b border-white/[0.06] px-5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
